@@ -1,4 +1,3 @@
-# base — легкий образ для api; ai — + ML-залежності для collector/worker/beat
 FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
