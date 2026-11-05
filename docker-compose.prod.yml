@@ -1,38 +1,7 @@
 name: cryptoparser
 
+# БД і Redis живуть окремо в ~/crypto-infra на сервері: деплой API їх не перезапускає
 services:
-  db:
-    image: timescale/timescaledb:latest-pg16
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:?}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
-      POSTGRES_DB: ${POSTGRES_DB:?}
-      TS_TUNE_MEMORY: ${TS_TUNE_MEMORY:-4GB}
-      TS_TUNE_NUM_CPUS: ${TS_TUNE_NUM_CPUS:-2}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      # Через TCP: під час першої ініціалізації сокет уже відповідає, а TCP ще ні
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD:?} --appendonly yes
-    environment:
-      REDISCLI_AUTH: ${REDIS_PASSWORD:?}
-    volumes:
-      - redisdata:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   api:
     build:
       context: .
@@ -40,16 +9,20 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@db:5432/${POSTGRES_DB:?}
-      REDIS_URL: redis://:${REDIS_PASSWORD:?}@redis:6379/0
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:?}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?}
+      DB_NAME: ${POSTGRES_DB:?}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?}
     ports:
       - "8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    networks:
+      - infra
 
-volumes:
-  pgdata:
-  redisdata:
+networks:
+  infra:
+    external: true
+    name: crypto-infra_default

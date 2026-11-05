@@ -41,13 +41,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Перевірити секрети
+        env:
+          ORACLE_USER: ${{ secrets.ORACLE_USER }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          ORACLE_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          missing=""
+          for name in ORACLE_USER ORACLE_HOST ORACLE_SSH_KEY ORACLE_KNOWN_HOSTS; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Не задані секрети:$missing (Settings → Secrets and variables → Actions → Repository secrets)"
+            exit 1
+          fi
+
       - name: Налаштувати SSH
         env:
           SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          # Ключ, скопійований у Windows, може мати CRLF — ssh такий не прочитає
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
 
@@ -75,7 +92,6 @@ jobs:
           compose="docker compose -f docker-compose.prod.yml"
 
           $compose build api
-          $compose up -d --wait db redis
           $compose run --rm api alembic upgrade head
           $compose up -d api
 
