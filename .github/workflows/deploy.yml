@@ -92,7 +92,8 @@ jobs:
           compose="docker compose -f docker-compose.prod.yml"
 
           $compose build api
-          $compose run --rm api alembic upgrade head
+          # </dev/null: скрипт читається зі stdin, і docker compose з'їв би його решту
+          $compose run --rm -T api alembic upgrade head </dev/null
           $compose up -d api
 
           for _ in $(seq 1 30); do
@@ -100,7 +101,7 @@ jobs:
           import json, urllib.request
           body = json.load(urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=5))
           raise SystemExit(body['status'] != 'ok')
-          " 2>/dev/null; then
+          " </dev/null 2>/dev/null; then
               echo "API працює"
               docker image prune -f
               exit 0
