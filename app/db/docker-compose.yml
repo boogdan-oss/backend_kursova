@@ -1,0 +1,43 @@
+# Запуск з backend/: docker compose --env-file app/.env -f app/db/docker-compose.yml up -d
+name: cryptoparser-local
+
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:?}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?}
+      POSTGRES_DB: ${DB_NAME:?}
+      TS_TUNE_MEMORY: ${TS_TUNE_MEMORY:-4GB}
+      TS_TUNE_NUM_CPUS: ${TS_TUNE_NUM_CPUS:-2}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${DB_PORT:?}:5432"
+    healthcheck:
+      # Через TCP: під час першої ініціалізації сокет уже відповідає, а TCP ще ні
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:?} --appendonly yes
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?}
+    volumes:
+      - redisdata:/data
+    ports:
+      - "127.0.0.1:${REDIS_PORT:?}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:

@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
+from app.collectors.registry import aclose_adapters
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.db.session import engine
@@ -19,6 +20,7 @@ log = structlog.get_logger()
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     log.info("api.startup", environment=settings.environment)
     yield
+    await aclose_adapters()
     await engine.dispose()
     log.info("api.shutdown")
 

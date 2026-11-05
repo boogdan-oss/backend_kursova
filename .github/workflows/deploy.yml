@@ -1,0 +1,98 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Деплої йдуть по черзі: новий чекає, поки завершиться попередній
+concurrency:
+  group: deploy-oracle
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: mypy app
+      - run: pytest -q
+
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SSH_TARGET: ${{ secrets.ORACLE_USER }}@${{ secrets.ORACLE_HOST }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Налаштувати SSH
+        env:
+          SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Передати код на сервер
+        run: |
+          git archive --format=tar.gz HEAD | ssh -i ~/.ssh/id_deploy "$SSH_TARGET" '
+            set -e
+            mkdir -p ~/cryptoparser
+            cd ~/cryptoparser
+            rm -rf app alembic tests
+            tar -xzf -
+          '
+
+      - name: Зібрати, застосувати міграції, запустити
+        run: |
+          ssh -i ~/.ssh/id_deploy "$SSH_TARGET" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd ~/cryptoparser
+
+          if [ ! -f .env ]; then
+            echo "Немає ~/cryptoparser/.env — створи його з .env.prod.example" >&2
+            exit 1
+          fi
+
+          compose="docker compose -f docker-compose.prod.yml"
+
+          $compose build api
+          $compose up -d --wait db redis
+          $compose run --rm api alembic upgrade head
+          $compose up -d api
+
+          for _ in $(seq 1 30); do
+            if $compose exec -T api python -c "
+          import json, urllib.request
+          body = json.load(urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=5))
+          raise SystemExit(body['status'] != 'ok')
+          " 2>/dev/null; then
+              echo "API працює"
+              docker image prune -f
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "API не пройшов перевірку /health" >&2
+          $compose logs --tail=50 api >&2
+          exit 1
+          REMOTE
