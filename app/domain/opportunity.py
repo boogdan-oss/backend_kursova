@@ -34,4 +34,5 @@ class Opportunity(BaseModel):
     risk_score: float | None = Field(default=None, ge=0, le=1)  # від AI
     risk_level: RiskLevel | None = None
     ai_score: int | None = Field(default=None, ge=0, le=100)  # (1.9)
+    investment: Decimal | None = None  # сума, для якої пораховано estimated_profit
     detected_at: AwareDatetime

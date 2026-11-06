@@ -37,13 +37,26 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
     ]
 
-    @field_validator("cors_origins", mode="before")
+    # Збір даних (CLAUDE.md, розділ 5.1)
+    exchanges: Annotated[list[str], NoDecode] = ["binance", "bybit"]
+    rate_limit_initial_rps: float = 1.0
+    rate_limit_max_rps: float = 10.0
+    rate_limit_cooldown_sec: float = 300.0
+    collector_concurrency: int = 4
+    # Завжди в найвищому пріоритеті: пара за замовчуванням в UI
+    collector_priority_pairs: Annotated[list[str], NoDecode] = ["USDT/UAH"]
+    # NFR-01 просить 1-10 с; бюджет Binance ~3 rps, і частіше одна пара з'їдала б більшість
+    collector_min_refresh_sec: float = 5.0
+    # Старші дані API позначає застарілими й просить collector підняти пріоритет пари
+    data_stale_after_sec: float = 60.0
+
+    @field_validator("cors_origins", "exchanges", "collector_priority_pairs", mode="before")
     @classmethod
-    def split_origins(cls, value: object) -> object:
+    def split_list(cls, value: object) -> object:
         if isinstance(value, str) and not value.startswith("["):
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
+            return [item.strip() for item in value.split(",") if item.strip()]
         if isinstance(value, str):
-            return [origin.strip(' "') for origin in value.strip("[]").split(",")]
+            return [item.strip(' "') for item in value.strip("[]").split(",")]
         return value
 
     @model_validator(mode="after")

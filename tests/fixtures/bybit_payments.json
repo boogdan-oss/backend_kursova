@@ -1,0 +1,649 @@
+{
+  "ret_code": 0,
+  "ret_msg": "SUCCESS",
+  "result": {
+    "currencyPaymentIdMap": "{\"UAH\": [43, 60, 61, 46, 14, 544, 545, 64, 63, 80, 45, 31, 74, 22, 342, 34, 548, 13, 526, 547, 663, 78, 40, 546, 659, 623, 660, 18, 625, 1, 661, 90, 624, 49], \"EUR\": [78, 65, 14, 147, 522, 275]}",
+    "paymentConfigVo": [
+      {
+        "paymentType": "1",
+        "paymentName": "A-Bank"
+      },
+      {
+        "paymentType": "136",
+        "paymentName": "ABN AMRO"
+      },
+      {
+        "paymentType": "7",
+        "paymentName": "AirTM"
+      },
+      {
+        "paymentType": "280",
+        "paymentName": "Altyn Bank"
+      },
+      {
+        "paymentType": "213",
+        "paymentName": "Ameriabank"
+      },
+      {
+        "paymentType": "10",
+        "paymentName": "Apple Pay"
+      },
+      {
+        "paymentType": "371",
+        "paymentName": "ArmEconomBank"
+      },
+      {
+        "paymentType": "11",
+        "paymentName": "Bank of Georgia"
+      },
+      {
+        "paymentType": "13",
+        "paymentName": "Bank Pivdenny"
+      },
+      {
+        "paymentType": "14",
+        "paymentName": "Bank Transfer"
+      },
+      {
+        "paymentType": "123",
+        "paymentName": "Banco Brubank"
+      },
+      {
+        "paymentType": "127",
+        "paymentName": "Bank RBK"
+      },
+      {
+        "paymentType": "137",
+        "paymentName": "Banesco"
+      },
+      {
+        "paymentType": "402",
+        "paymentName": "Banco Santander (Spain)"
+      },
+      {
+        "paymentType": "416",
+        "paymentName": "Balance"
+      },
+      {
+        "paymentType": "545",
+        "paymentName": "Bank Vlasnyi Rakhunok"
+      },
+      {
+        "paymentType": "552",
+        "paymentName": "Bakai Bank"
+      },
+      {
+        "paymentType": "16",
+        "paymentName": "BBVA"
+      },
+      {
+        "paymentType": "138",
+        "paymentName": "Bizum"
+      },
+      {
+        "paymentType": "275",
+        "paymentName": "bKash"
+      },
+      {
+        "paymentType": "139",
+        "paymentName": "BNP Paribas"
+      },
+      {
+        "paymentType": "330",
+        "paymentName": "Bunq"
+      },
+      {
+        "paymentType": "18",
+        "paymentName": "Cash Deposit to Bank"
+      },
+      {
+        "paymentType": "90",
+        "paymentName": "Cash in Person"
+      },
+      {
+        "paymentType": "96",
+        "paymentName": "Cash app"
+      },
+      {
+        "paymentType": "140",
+        "paymentName": "Caisse d'Epargne"
+      },
+      {
+        "paymentType": "141",
+        "paymentName": "Cartes Bancaires"
+      },
+      {
+        "paymentType": "211",
+        "paymentName": "CenterCredit Bank"
+      },
+      {
+        "paymentType": "293",
+        "paymentName": "Commercial bank Kyrgyzstan"
+      },
+      {
+        "paymentType": "22",
+        "paymentName": "Credit Agricole"
+      },
+      {
+        "paymentType": "359",
+        "paymentName": "Credo Bank"
+      },
+      {
+        "paymentType": "625",
+        "paymentName": "Credit Dnipro"
+      },
+      {
+        "paymentType": "142",
+        "paymentName": "Davivienda S.A"
+      },
+      {
+        "paymentType": "433",
+        "paymentName": "DCBank"
+      },
+      {
+        "paymentType": "295",
+        "paymentName": "DemirBank"
+      },
+      {
+        "paymentType": "411",
+        "paymentName": "DenizBank"
+      },
+      {
+        "paymentType": "535",
+        "paymentName": "DenizBank(S)"
+      },
+      {
+        "paymentType": "751",
+        "paymentName": "Dukascopy Bank"
+      },
+      {
+        "paymentType": "25",
+        "paymentName": "EasyPay"
+      },
+      {
+        "paymentType": "143",
+        "paymentName": "Easypaisa-PK Only"
+      },
+      {
+        "paymentType": "526",
+        "paymentName": "Ecobank"
+      },
+      {
+        "paymentType": "409",
+        "paymentName": "Erste Bank"
+      },
+      {
+        "paymentType": "224",
+        "paymentName": "FinComBank"
+      },
+      {
+        "paymentType": "539",
+        "paymentName": "Fineco"
+      },
+      {
+        "paymentType": "144",
+        "paymentName": "ForteBank"
+      },
+      {
+        "paymentType": "546",
+        "paymentName": "Forward Bank"
+      },
+      {
+        "paymentType": "549",
+        "paymentName": "Freedom Bank"
+      },
+      {
+        "paymentType": "100",
+        "paymentName": "Garanti"
+      },
+      {
+        "paymentType": "342",
+        "paymentName": "GEO Pay"
+      },
+      {
+        "paymentType": "29",
+        "paymentName": "Google Pay"
+      },
+      {
+        "paymentType": "203",
+        "paymentName": "Halyk Bank"
+      },
+      {
+        "paymentType": "400",
+        "paymentName": "iCard"
+      },
+      {
+        "paymentType": "31",
+        "paymentName": "Idea Bank"
+      },
+      {
+        "paymentType": "145",
+        "paymentName": "iDEAL"
+      },
+      {
+        "paymentType": "146",
+        "paymentName": "Idram"
+      },
+      {
+        "paymentType": "373",
+        "paymentName": "IDBank"
+      },
+      {
+        "paymentType": "32",
+        "paymentName": "IMPS"
+      },
+      {
+        "paymentType": "103",
+        "paymentName": "Inecobank"
+      },
+      {
+        "paymentType": "104",
+        "paymentName": "Interbank"
+      },
+      {
+        "paymentType": "147",
+        "paymentName": "ING"
+      },
+      {
+        "paymentType": "408",
+        "paymentName": "International Wire"
+      },
+      {
+        "paymentType": "591",
+        "paymentName": "Instapay"
+      },
+      {
+        "paymentType": "544",
+        "paymentName": "Izibank"
+      },
+      {
+        "paymentType": "148",
+        "paymentName": "Jazzcash"
+      },
+      {
+        "paymentType": "563",
+        "paymentName": "Jusan Bank"
+      },
+      {
+        "paymentType": "150",
+        "paymentName": "Kaspi Bank"
+      },
+      {
+        "paymentType": "743",
+        "paymentName": "KapitalBank"
+      },
+      {
+        "paymentType": "551",
+        "paymentName": "KoronaPay"
+      },
+      {
+        "paymentType": "34",
+        "paymentName": "KredoBank"
+      },
+      {
+        "paymentType": "151",
+        "paymentName": "Kuveyt Turk"
+      },
+      {
+        "paymentType": "152",
+        "paymentName": "La Banque postale"
+      },
+      {
+        "paymentType": "741",
+        "paymentName": "m10"
+      },
+      {
+        "paymentType": "52",
+        "paymentName": "Maya"
+      },
+      {
+        "paymentType": "202",
+        "paymentName": "MAIB"
+      },
+      {
+        "paymentType": "292",
+        "paymentName": "mBank"
+      },
+      {
+        "paymentType": "154",
+        "paymentName": "Millenium"
+      },
+      {
+        "paymentType": "40",
+        "paymentName": "Mobile Top-up"
+      },
+      {
+        "paymentType": "43",
+        "paymentName": "Monobank (card)"
+      },
+      {
+        "paymentType": "155",
+        "paymentName": "Moneygram"
+      },
+      {
+        "paymentType": "232",
+        "paymentName": "Monzo"
+      },
+      {
+        "paymentType": "659",
+        "paymentName": "Monobank (IBAN)"
+      },
+      {
+        "paymentType": "752",
+        "paymentName": "Myfin Bank"
+      },
+      {
+        "paymentType": "156",
+        "paymentName": "N26"
+      },
+      {
+        "paymentType": "264",
+        "paymentName": "Nagad"
+      },
+      {
+        "paymentType": "45",
+        "paymentName": "NEO"
+      },
+      {
+        "paymentType": "111",
+        "paymentName": "NETELLER"
+      },
+      {
+        "paymentType": "291",
+        "paymentName": "Optima Bank"
+      },
+      {
+        "paymentType": "46",
+        "paymentName": "Oschadbank"
+      },
+      {
+        "paymentType": "49",
+        "paymentName": "OTP Bank"
+      },
+      {
+        "paymentType": "50",
+        "paymentName": "Payall"
+      },
+      {
+        "paymentType": "51",
+        "paymentName": "Payeer"
+      },
+      {
+        "paymentType": "53",
+        "paymentName": "PayMe"
+      },
+      {
+        "paymentType": "54",
+        "paymentName": "PayPal"
+      },
+      {
+        "paymentType": "55",
+        "paymentName": "Paytm"
+      },
+      {
+        "paymentType": "114",
+        "paymentName": "Papara"
+      },
+      {
+        "paymentType": "130",
+        "paymentName": "Pago Movil"
+      },
+      {
+        "paymentType": "157",
+        "paymentName": "Paysend.com"
+      },
+      {
+        "paymentType": "158",
+        "paymentName": "Paysera"
+      },
+      {
+        "paymentType": "265",
+        "paymentName": "Pasha Bank"
+      },
+      {
+        "paymentType": "284",
+        "paymentName": "Paynet"
+      },
+      {
+        "paymentType": "333",
+        "paymentName": "Paritet Bank"
+      },
+      {
+        "paymentType": "354",
+        "paymentName": "PagSeguro"
+      },
+      {
+        "paymentType": "410",
+        "paymentName": "PayPay"
+      },
+      {
+        "paymentType": "452",
+        "paymentName": "PAO Bank"
+      },
+      {
+        "paymentType": "470",
+        "paymentName": "PalmPay"
+      },
+      {
+        "paymentType": "521",
+        "paymentName": "Palm Pay"
+      },
+      {
+        "paymentType": "522",
+        "paymentName": "Paycom or Opay"
+      },
+      {
+        "paymentType": "528",
+        "paymentName": "PAGA"
+      },
+      {
+        "paymentType": "56",
+        "paymentName": "Perfect Money"
+      },
+      {
+        "paymentType": "115",
+        "paymentName": "Permata Me"
+      },
+      {
+        "paymentType": "57",
+        "paymentName": "PhonePe"
+      },
+      {
+        "paymentType": "116",
+        "paymentName": "Pipol Pay"
+      },
+      {
+        "paymentType": "252",
+        "paymentName": "Pix"
+      },
+      {
+        "paymentType": "353",
+        "paymentName": "PicPay"
+      },
+      {
+        "paymentType": "159",
+        "paymentName": "PKO Bank"
+      },
+      {
+        "paymentType": "370",
+        "paymentName": "Plin"
+      },
+      {
+        "paymentType": "58",
+        "paymentName": "PNB"
+      },
+      {
+        "paymentType": "160",
+        "paymentName": "Postepay"
+      },
+      {
+        "paymentType": "525",
+        "paymentName": "Polaris bank"
+      },
+      {
+        "paymentType": "60",
+        "paymentName": "Privat Bank"
+      },
+      {
+        "paymentType": "131",
+        "paymentName": "Prex"
+      },
+      {
+        "paymentType": "190",
+        "paymentName": "Produbanco"
+      },
+      {
+        "paymentType": "547",
+        "paymentName": "Pravex Bank"
+      },
+      {
+        "paymentType": "660",
+        "paymentName": "Privatbank (card)"
+      },
+      {
+        "paymentType": "661",
+        "paymentName": "Privatbank (IBAN)"
+      },
+      {
+        "paymentType": "61",
+        "paymentName": "PUMB"
+      },
+      {
+        "paymentType": "593",
+        "paymentName": "Pyypl"
+      },
+      {
+        "paymentType": "63",
+        "paymentName": "Raiffeisen Bank Aval"
+      },
+      {
+        "paymentType": "64",
+        "paymentName": "Raiffeisenbank"
+      },
+      {
+        "paymentType": "742",
+        "paymentName": "Rabita Bank"
+      },
+      {
+        "paymentType": "65",
+        "paymentName": "Revolut"
+      },
+      {
+        "paymentType": "538",
+        "paymentName": "RWS BANK"
+      },
+      {
+        "paymentType": "133",
+        "paymentName": "Santander Poland"
+      },
+      {
+        "paymentType": "118",
+        "paymentName": "SEPA"
+      },
+      {
+        "paymentType": "303",
+        "paymentName": "SEPA Instant"
+      },
+      {
+        "paymentType": "623",
+        "paymentName": "Sense SuperApp"
+      },
+      {
+        "paymentType": "162",
+        "paymentName": "Skrill"
+      },
+      {
+        "paymentType": "163",
+        "paymentName": "Societe Generale"
+      },
+      {
+        "paymentType": "164",
+        "paymentName": "Sofort"
+      },
+      {
+        "paymentType": "73",
+        "paymentName": "SWIFT"
+      },
+      {
+        "paymentType": "540",
+        "paymentName": "Swedbank"
+      },
+      {
+        "paymentType": "74",
+        "paymentName": "Tascombank"
+      },
+      {
+        "paymentType": "165",
+        "paymentName": "TBC Bank"
+      },
+      {
+        "paymentType": "77",
+        "paymentName": "Transfers with specific bank"
+      },
+      {
+        "paymentType": "80",
+        "paymentName": "Ukrsibbank"
+      },
+      {
+        "paymentType": "548",
+        "paymentName": "Ukrgasbank"
+      },
+      {
+        "paymentType": "663",
+        "paymentName": "Umoney"
+      },
+      {
+        "paymentType": "166",
+        "paymentName": "UniCredit"
+      },
+      {
+        "paymentType": "238",
+        "paymentName": "UniBank"
+      },
+      {
+        "paymentType": "624",
+        "paymentName": "Unex Bank"
+      },
+      {
+        "paymentType": "167",
+        "paymentName": "Uphold"
+      },
+      {
+        "paymentType": "412",
+        "paymentName": "VakifBank"
+      },
+      {
+        "paymentType": "168",
+        "paymentName": "Victoriabank"
+      },
+      {
+        "paymentType": "169",
+        "paymentName": "Vodafone cash"
+      },
+      {
+        "paymentType": "87",
+        "paymentName": "Western Union"
+      },
+      {
+        "paymentType": "78",
+        "paymentName": "Wise"
+      },
+      {
+        "paymentType": "170",
+        "paymentName": "WorldRemit"
+      },
+      {
+        "paymentType": "171",
+        "paymentName": "Yape"
+      },
+      {
+        "paymentType": "328",
+        "paymentName": "ZEN.COM"
+      },
+      {
+        "paymentType": "122",
+        "paymentName": "Ziraat"
+      }
+    ]
+  }
+}

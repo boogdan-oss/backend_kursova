@@ -2,14 +2,16 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.v1.router import api_router
-from app.collectors.registry import aclose_adapters
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.db.session import engine
+from app.pubsub import close_redis
 
 settings = get_settings()
 setup_logging(settings.log_level)
@@ -20,7 +22,7 @@ log = structlog.get_logger()
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     log.info("api.startup", environment=settings.environment)
     yield
-    await aclose_adapters()
+    await close_redis()
     await engine.dispose()
     log.info("api.shutdown")
 
@@ -39,5 +41,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(SQLAlchemyError)
+@app.exception_handler(ConnectionError)
+async def database_unavailable(_: Request, exc: Exception) -> JSONResponse:
+    log.error("api.database_error", error=repr(exc))
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": "База даних тимчасово недоступна"},
+    )
+
 
 app.include_router(api_router)

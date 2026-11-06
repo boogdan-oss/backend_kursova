@@ -8,3 +8,4 @@ __pycache__
 .ruff_cache
 .env
 *.egg-info
+**/_folder_info.txt

@@ -1,26 +1,35 @@
 name: cryptoparser
 
+# Спільне для API і collector: один образ, ті самі налаштування
+x-backend: &backend
+  image: cryptoparser-backend
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    DB_HOST: postgres
+    DB_PORT: 5432
+    DB_USER: ${POSTGRES_USER:?}
+    DB_PASSWORD: ${POSTGRES_PASSWORD:?}
+    DB_NAME: ${POSTGRES_DB:?}
+    REDIS_HOST: redis
+    REDIS_PORT: 6379
+    REDIS_PASSWORD: ${REDIS_PASSWORD:?}
+  networks:
+    - infra
+
 # БД і Redis живуть окремо в ~/crypto-infra на сервері: деплой API їх не перезапускає
 services:
   api:
+    <<: *backend
     build:
       context: .
       target: base
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: ${POSTGRES_USER:?}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:?}
-      DB_NAME: ${POSTGRES_DB:?}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?}
     ports:
       - "8000:8000"
-    networks:
-      - infra
+
+  collector:
+    <<: *backend
+    command: python -m app.workers.collector
 
 networks:
   infra:

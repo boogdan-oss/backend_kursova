@@ -1,0 +1,315 @@
+{
+  "code": "000000",
+  "message": null,
+  "messageDetail": null,
+  "data": {
+    "fiat": "UAH",
+    "areas": [
+      {
+        "area": "EXPRESS",
+        "proMerchantFilterAvailable": false,
+        "tradeSides": [
+          {
+            "side": "BUY",
+            "assets": [
+              {
+                "asset": "USDT",
+                "description": "Tether"
+              },
+              {
+                "asset": "BTC",
+                "description": "Bitcoin"
+              },
+              {
+                "asset": "USDC",
+                "description": ""
+              },
+              {
+                "asset": "BNB",
+                "description": "Binance Coin"
+              },
+              {
+                "asset": "ETH",
+                "description": "Ethereum"
+              },
+              {
+                "asset": "SOL",
+                "description": ""
+              },
+              {
+                "asset": "U",
+                "description": ""
+              }
+            ],
+            "convertAssets": [],
+            "tradeMethods": [
+              {
+                "identifier": "Monobank"
+              },
+              {
+                "identifier": "PrivatBank"
+              },
+              {
+                "identifier": "ABank"
+              },
+              {
+                "identifier": "PUMBBank"
+              },
+              {
+                "identifier": "Oschadbank"
+              },
+              {
+                "identifier": "SenseSuperApp"
+              },
+              {
+                "identifier": "Monobankiban"
+              }
+            ]
+          },
+          {
+            "side": "SELL",
+            "assets": [
+              {
+                "asset": "USDT",
+                "description": "Tether"
+              },
+              {
+                "asset": "BTC",
+                "description": "Bitcoin"
+              },
+              {
+                "asset": "USDC",
+                "description": ""
+              },
+              {
+                "asset": "BNB",
+                "description": "Binance Coin"
+              },
+              {
+                "asset": "ETH",
+                "description": "Ethereum"
+              },
+              {
+                "asset": "SOL",
+                "description": ""
+              },
+              {
+                "asset": "U",
+                "description": ""
+              }
+            ],
+            "convertAssets": [],
+            "tradeMethods": [
+              {
+                "identifier": "Monobank"
+              },
+              {
+                "identifier": "PrivatBank"
+              },
+              {
+                "identifier": "ABank"
+              },
+              {
+                "identifier": "PUMBBank"
+              },
+              {
+                "identifier": "Oschadbank"
+              },
+              {
+                "identifier": "SenseSuperApp"
+              },
+              {
+                "identifier": "Monobankiban"
+              }
+            ]
+          }
+        ],
+        "newArea": false
+      },
+      {
+        "area": "P2P",
+        "proMerchantFilterAvailable": false,
+        "tradeSides": [
+          {
+            "side": "BUY",
+            "assets": [
+              {
+                "asset": "USDT",
+                "description": "Tether"
+              },
+              {
+                "asset": "BTC",
+                "description": "Bitcoin"
+              },
+              {
+                "asset": "USDC",
+                "description": ""
+              },
+              {
+                "asset": "BNB",
+                "description": "Binance Coin"
+              },
+              {
+                "asset": "ETH",
+                "description": "Ethereum"
+              },
+              {
+                "asset": "SOL",
+                "description": ""
+              },
+              {
+                "asset": "U",
+                "description": ""
+              }
+            ],
+            "convertAssets": [],
+            "tradeMethods": [
+              {
+                "identifier": "Monobank"
+              },
+              {
+                "identifier": "PrivatBank"
+              },
+              {
+                "identifier": "ABank"
+              },
+              {
+                "identifier": "PUMBBank"
+              }
+            ]
+          },
+          {
+            "side": "SELL",
+            "assets": [
+              {
+                "asset": "USDT",
+                "description": "Tether"
+              },
+              {
+                "asset": "BTC",
+                "description": "Bitcoin"
+              },
+              {
+                "asset": "USDC",
+                "description": ""
+              },
+              {
+                "asset": "BNB",
+                "description": "Binance Coin"
+              },
+              {
+                "asset": "ETH",
+                "description": "Ethereum"
+              },
+              {
+                "asset": "SOL",
+                "description": ""
+              },
+              {
+                "asset": "U",
+                "description": ""
+              }
+            ],
+            "convertAssets": [],
+            "tradeMethods": [
+              {
+                "identifier": "Monobank"
+              },
+              {
+                "identifier": "PrivatBank"
+              },
+              {
+                "identifier": "ABank"
+              },
+              {
+                "identifier": "PUMBBank"
+              }
+            ]
+          }
+        ],
+        "newArea": false
+      },
+      {
+        "area": "PAY",
+        "proMerchantFilterAvailable": false,
+        "tradeSides": [
+          {
+            "side": "SELL",
+            "assets": [
+              {
+                "asset": "USDT",
+                "description": "Tether"
+              },
+              {
+                "asset": "BTC",
+                "description": "Bitcoin"
+              },
+              {
+                "asset": "BNB",
+                "description": "Binance Coin"
+              },
+              {
+                "asset": "ETH",
+                "description": "Ethereum"
+              },
+              {
+                "asset": "USDC",
+                "description": ""
+              },
+              {
+                "asset": "U",
+                "description": ""
+              }
+            ],
+            "convertAssets": [],
+            "tradeMethods": [
+              {
+                "identifier": "Monobank"
+              },
+              {
+                "identifier": "PrivatBank"
+              },
+              {
+                "identifier": "ABank"
+              },
+              {
+                "identifier": "PUMBBank"
+              }
+            ]
+          }
+        ],
+        "newArea": false
+      },
+      {
+        "area": "MARKETPLACE",
+        "proMerchantFilterAvailable": false,
+        "tradeSides": [
+          {
+            "side": "SELL",
+            "assets": [
+              {
+                "asset": "USDT",
+                "description": "Tether"
+              }
+            ],
+            "convertAssets": [],
+            "tradeMethods": []
+          },
+          {
+            "side": "BUY",
+            "assets": [
+              {
+                "asset": "USDT",
+                "description": "Tether"
+              }
+            ],
+            "convertAssets": [],
+            "tradeMethods": []
+          }
+        ],
+        "newArea": false
+      }
+    ]
+  },
+  "success": true
+}

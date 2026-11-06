@@ -5,7 +5,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Деплої йдуть по черзі: новий чекає, поки завершиться попередній
+
 concurrency:
   group: deploy-oracle
   cancel-in-progress: false
@@ -94,7 +94,7 @@ jobs:
           $compose build api
           # </dev/null: скрипт читається зі stdin, і docker compose з'їв би його решту
           $compose run --rm -T api alembic upgrade head </dev/null
-          $compose up -d api
+          $compose up -d api collector
 
           for _ in $(seq 1 30); do
             if $compose exec -T api python -c "

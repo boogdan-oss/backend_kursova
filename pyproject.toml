@@ -17,14 +17,15 @@ dependencies = [
     "alembic>=1.14",
     "redis>=5.2",
     "httpx>=0.28",
+    "tenacity>=9.0",
     "structlog>=24.4",
+    "networkx>=3.4",
 ]
 
 [project.optional-dependencies]
 ai = [
     "pandas>=2.2",
     "numpy>=2.1",
-    "networkx>=3.4",
     "scikit-learn>=1.5",
     "lightgbm>=4.5",
     "statsmodels>=0.14",

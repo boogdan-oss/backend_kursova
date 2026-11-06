@@ -1,0 +1,38 @@
+{
+  "ret_code": 0,
+  "ret_msg": "成功",
+  "result": {
+    "symbols": [
+      {
+        "id": 8,
+        "tokenId": "USDT",
+        "currencyId": "UAH",
+        "status": 1
+      },
+      {
+        "id": 13,
+        "tokenId": "USDT",
+        "currencyId": "EUR",
+        "status": 1
+      },
+      {
+        "id": 32,
+        "tokenId": "BTC",
+        "currencyId": "UAH",
+        "status": 1
+      },
+      {
+        "id": 128,
+        "tokenId": "USDC",
+        "currencyId": "EUR",
+        "status": 1
+      },
+      {
+        "id": 99999,
+        "tokenId": "ETH",
+        "currencyId": "UAH",
+        "status": 0
+      }
+    ]
+  }
+}

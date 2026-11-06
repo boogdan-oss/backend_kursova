@@ -6,6 +6,7 @@
 from datetime import datetime
 
 from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, str_enum
@@ -89,3 +90,26 @@ class CurrencyPair(Base):
 
     base_currency: Mapped[Asset] = relationship(lazy="joined")
     quote_currency: Mapped[Fiat] = relationship(lazy="joined")
+
+
+class ExchangeMarket(Base):
+    """Пара на конкретній біржі: що підтримує біржа і наскільки свіжі дані.
+
+    buy_fetched_at / sell_fetched_at — час останнього збору сторони. Він же вказує на актуальний
+    пакет в offer_snapshots: API не шукає max(time) по hypertable, а порожня сторона не показує
+    старі оголошення.
+    """
+
+    __tablename__ = "exchange_markets"
+
+    exchange_id: Mapped[int] = mapped_column(
+        ForeignKey("exchanges.id", ondelete="CASCADE"), primary_key=True
+    )
+    pair_id: Mapped[int] = mapped_column(
+        ForeignKey("currency_pairs.id", ondelete="CASCADE"), primary_key=True
+    )
+    # З довідника біржі й реальних оголошень: довідник перелічує лише частину способів оплати
+    payment_methods: Mapped[list[str]] = mapped_column(ARRAY(String(64)))
+    listed_at: Mapped[datetime | None]  # NULL — пари ще не було в довіднику біржі
+    buy_fetched_at: Mapped[datetime | None]
+    sell_fetched_at: Mapped[datetime | None]

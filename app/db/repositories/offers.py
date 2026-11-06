@@ -1,41 +1,23 @@
 from collections.abc import Sequence
-from datetime import UTC, datetime
-from typing import Any
+from datetime import datetime
+from decimal import Decimal
+from typing import Any, cast
 
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import func, insert, select, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Asset, CurrencyPair, Exchange, Fiat, Merchant, OfferSnapshot
-from app.domain import Offer
-
-
-async def _get_or_create_code(session: AsyncSession, model: type[Asset | Fiat], code: str) -> int:
-    """Нові активи й фіати з'являються динамічно; назву згодом уточнить довідник бірж."""
-    await session.execute(
-        pg_insert(model)
-        .values(code=code, name=code)
-        .on_conflict_do_nothing(index_elements=["code"])
-    )
-    return (await session.execute(select(model.id).where(model.code == code))).scalar_one()
-
-
-async def get_or_create_pair(session: AsyncSession, asset: str, fiat: str) -> int:
-    asset_id = await _get_or_create_code(session, Asset, asset)
-    fiat_id = await _get_or_create_code(session, Fiat, fiat)
-    await session.execute(
-        pg_insert(CurrencyPair)
-        .values(base_currency_id=asset_id, quote_currency_id=fiat_id)
-        .on_conflict_do_nothing(index_elements=["base_currency_id", "quote_currency_id"])
-    )
-    query = select(CurrencyPair.id).where(
-        CurrencyPair.base_currency_id == asset_id, CurrencyPair.quote_currency_id == fiat_id
-    )
-    return (await session.execute(query)).scalar_one()
+from app.db.models import Merchant, OfferSnapshot
+from app.db.repositories.market import MarketRow
+from app.domain import Merchant as MerchantInfo
+from app.domain import Offer, Side
 
 
 def merchant_rows(exchange_id: int, offers: Sequence[Offer]) -> list[dict[str, Any]]:
-    """Один рядок на продавця: ON CONFLICT DO UPDATE не може змінити той самий рядок двічі."""
+    """Один рядок на продавця: ON CONFLICT DO UPDATE не може змінити той самий рядок двічі.
+
+    Порядок за external_id: паралельні транзакції блокують рядки однаково — без deadlock.
+    """
     merchants = {offer.merchant.id: offer.merchant for offer in offers}
     return [
         {
@@ -45,15 +27,42 @@ def merchant_rows(exchange_id: int, offers: Sequence[Offer]) -> list[dict[str, A
             "orders_30d": merchant.orders_30d,
             "completion_rate": merchant.completion_rate,
         }
-        for merchant in merchants.values()
+        for _, merchant in sorted(merchants.items())
     ]
 
 
 async def upsert_merchants(
     session: AsyncSession, exchange_id: int, offers: Sequence[Offer]
 ) -> dict[str, int]:
-    """Оновлює продавців і повертає відповідність external_id → id."""
-    insert_stmt = pg_insert(Merchant).values(merchant_rows(exchange_id, offers))
+    """Записує нових і змінених продавців і повертає відповідність external_id → id.
+
+    Незмінних не чіпає: кожен INSERT ... ON CONFLICT витрачає значення послідовності
+    merchants.id, і за постійного збору вона вичерпалась би за кілька місяців.
+    """
+    rows = merchant_rows(exchange_id, offers)
+    query = select(
+        Merchant.external_id,
+        Merchant.id,
+        Merchant.nickname,
+        Merchant.orders_30d,
+        Merchant.completion_rate,
+    ).where(
+        Merchant.exchange_id == exchange_id,
+        Merchant.external_id.in_([row["external_id"] for row in rows]),
+    )
+    known = {row.external_id: row for row in (await session.execute(query)).all()}
+    ids = {external_id: row.id for external_id, row in known.items()}
+
+    changed = []
+    for row in rows:
+        current = known.get(row["external_id"])
+        state = (row["nickname"], row["orders_30d"], row["completion_rate"])
+        if current is None or state != tuple(current[2:]):
+            changed.append(row)
+    if not changed:
+        return ids
+
+    insert_stmt = pg_insert(Merchant).values(changed)
     upsert_stmt = insert_stmt.on_conflict_do_update(
         index_elements=["exchange_id", "external_id"],
         set_={
@@ -63,21 +72,19 @@ async def upsert_merchants(
             "updated_at": func.now(),
         },
     ).returning(Merchant.external_id, Merchant.id)
-    return {external_id: id_ for external_id, id_ in (await session.execute(upsert_stmt)).all()}
+    result = await session.execute(upsert_stmt)
+    ids.update({external_id: id_ for external_id, id_ in result.all()})
+    return ids
 
 
 async def save_offers(
-    session: AsyncSession, exchange: str, asset: str, fiat: str, offers: Sequence[Offer]
+    session: AsyncSession, exchange_id: int, pair_id: int, offers: Sequence[Offer]
 ) -> int:
-    """Зберігає знімок оголошень однієї пари на одній біржі. Коміт — на стороні сервісу."""
+    """Зберігає знімок оголошень однієї сторони пари. Коміт — на стороні сервісу."""
     if not offers:
         return 0
 
-    query = select(Exchange.id).where(Exchange.code == exchange)
-    exchange_id = (await session.execute(query)).scalar_one()
-    pair_id = await get_or_create_pair(session, asset, fiat)
     merchant_ids = await upsert_merchants(session, exchange_id, offers)
-
     await session.execute(
         insert(OfferSnapshot),
         [
@@ -97,7 +104,79 @@ async def save_offers(
             for offer in offers
         ],
     )
-    await session.execute(
-        update(Exchange).where(Exchange.id == exchange_id).values(last_ok_at=datetime.now(UTC))
-    )
     return len(offers)
+
+
+def _plain(value: Decimal) -> Decimal:
+    """Numeric(28, 8) повертає 46.10000000 — у відповіді API потрібно 46.1."""
+    return Decimal(format(value.normalize(), "f"))
+
+
+def _to_offer(market: MarketRow, snapshot: OfferSnapshot, merchant: Merchant) -> Offer:
+    return Offer(
+        exchange=market.exchange,
+        side=cast(Side, snapshot.side.value),
+        asset=market.asset,
+        fiat=market.fiat,
+        price=_plain(snapshot.price),
+        min_amount=_plain(snapshot.min_amount),
+        max_amount=_plain(snapshot.max_amount),
+        available=_plain(snapshot.available),
+        payment_methods=snapshot.payment_methods,
+        merchant=MerchantInfo(
+            id=merchant.external_id,
+            nickname=merchant.nickname,
+            orders_30d=merchant.orders_30d,
+            completion_rate=_plain(merchant.completion_rate),
+        ),
+        fetched_at=snapshot.time,
+        external_id=snapshot.external_id,
+    )
+
+
+async def latest_offers(session: AsyncSession, market: MarketRow, side: Side) -> list[Offer]:
+    """Актуальний пакет оголошень сторони — за вказівником з exchange_markets."""
+    fetched_at = market.fetched_at(side)
+    if fetched_at is None:
+        return []
+    query = (
+        select(OfferSnapshot, Merchant)
+        .join(Merchant, Merchant.id == OfferSnapshot.merchant_id)
+        .where(
+            OfferSnapshot.pair_id == market.pair_id,
+            OfferSnapshot.side == side,
+            OfferSnapshot.exchange_id == market.exchange_id,
+            OfferSnapshot.time == fetched_at,
+        )
+    )
+    rows = (await session.execute(query)).all()
+    return [_to_offer(market, snapshot, merchant) for snapshot, merchant in rows]
+
+
+async def fresh_offers(
+    session: AsyncSession, markets: Sequence[MarketRow], since: datetime
+) -> list[Offer]:
+    """Останні пакети багатьох пар одним запитом; пакети, старші за since, не беруться."""
+    batches = [
+        (market.exchange_id, market.pair_id, side, fetched_at)
+        for market in markets
+        for side, fetched_at in (("BUY", market.buy_fetched_at), ("SELL", market.sell_fetched_at))
+        if fetched_at is not None and fetched_at >= since
+    ]
+    if not batches:
+        return []
+
+    by_ids = {(market.exchange_id, market.pair_id): market for market in markets}
+    key = tuple_(
+        OfferSnapshot.exchange_id, OfferSnapshot.pair_id, OfferSnapshot.side, OfferSnapshot.time
+    )
+    query = (
+        select(OfferSnapshot, Merchant)
+        .join(Merchant, Merchant.id == OfferSnapshot.merchant_id)
+        # Умова на time окремо: так TimescaleDB не чіпає старі чанки
+        .where(OfferSnapshot.time >= since, key.in_(batches))
+    )
+    return [
+        _to_offer(by_ids[snapshot.exchange_id, snapshot.pair_id], snapshot, merchant)
+        for snapshot, merchant in (await session.execute(query)).all()
+    ]

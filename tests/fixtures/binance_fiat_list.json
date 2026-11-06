@@ -1,0 +1,20 @@
+{
+  "code": "000000",
+  "message": null,
+  "messageDetail": null,
+  "data": [
+    {
+      "currencyCode": "UAH",
+      "currencySymbol": "₴",
+      "currencyScale": 2,
+      "countryCode": "UA"
+    },
+    {
+      "currencyCode": "USD",
+      "currencySymbol": "$",
+      "currencyScale": 2,
+      "countryCode": "US"
+    }
+  ],
+  "success": true
+}
