@@ -30,7 +30,6 @@ PAYMENT_METHODS = [
 
 
 def upgrade() -> None:
-    # ON CONFLICT — щоб не падати, якщо довідник уже частково заповнений
     op.execute("INSERT INTO assets (code, name) VALUES ('USDT', 'Tether') ON CONFLICT DO NOTHING")
     op.execute(
         "INSERT INTO fiats (code, name) VALUES ('UAH', 'Українська гривня') ON CONFLICT DO NOTHING"

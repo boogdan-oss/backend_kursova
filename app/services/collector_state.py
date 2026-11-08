@@ -14,10 +14,8 @@ from redis.exceptions import RedisError
 from app.domain import CollectorStatus
 
 STATUS_KEY = "collector:status:{exchange}"
-# Ключ зникає, якщо collector перестав оновлювати: відсутність статусу = collector не працює
 STATUS_TTL_SEC = 30
 WANTED_KEY = "collector:wanted"
-# Скільки пара лишається в найвищому пріоритеті після запиту через API
 WANTED_TTL_SEC = 300
 
 log = structlog.get_logger()

@@ -24,6 +24,7 @@ def test_migrations_render_offline() -> None:
     sql = render_upgrade_sql()
     assert "CREATE EXTENSION IF NOT EXISTS timescaledb" in sql
     assert "add_retention_policy('offer_snapshots', INTERVAL '30 days')" in sql
+    assert "add_compression_policy('offer_snapshots', INTERVAL '1 day')" in sql
 
 
 def test_migrated_tables_exist_in_models() -> None:
@@ -46,5 +47,6 @@ def test_hypertables_match_model_markers() -> None:
 
 def test_seed_reference_data() -> None:
     sql = render_upgrade_sql()
-    for code in ("'USDT'", "'UAH'", "'binance'", "'bybit'", "'okx'", "'monobank'", "'privatbank'"):
+    codes = ("'USDT'", "'UAH'", "'binance'", "'bybit'", "'okx'", "'monobank'", "'privatbank'")
+    for code in (*codes, "'bitget'", "'mexc'", "'htx'"):
         assert code in sql

@@ -12,7 +12,7 @@ class FakeClock:
         self.now = 1000.0
 
     def __call__(self) -> float:
-        self.now += 0.001  # час іде: задачі не мають однакової мітки
+        self.now += 0.001
         return self.now
 
 

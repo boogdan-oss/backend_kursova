@@ -45,7 +45,6 @@ async def test_requests_are_spaced_by_rate(clock: FakeClock) -> None:
     for _ in range(5):
         await limiter.acquire()
 
-    # Перший запит одразу, далі кожні 0.5 с — без сплеску
     assert clock.now - started == pytest.approx(2.0)
 
 

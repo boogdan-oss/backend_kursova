@@ -56,7 +56,6 @@ from app.engine.spreads import PERCENT_PRECISION, round_money
 from app.services.collect_service import MarketStatsTracker
 from app.services.market_service import PairNotFound
 
-# Старші ціни не порівнюємо: застаріла сторона дала б хибний арбітраж
 OFFERS_MAX_AGE = timedelta(minutes=5)
 RISK_WINDOW = timedelta(hours=1)
 
@@ -74,7 +73,7 @@ class DealQuote:
     deal: Deal
     potential_loss: Decimal
     rr: Decimal | None
-    buy_fill: Fill | None  # None — ціну задав користувач
+    buy_fill: Fill | None
     sell_fill: Fill | None
 
 
@@ -395,7 +394,6 @@ class OpportunityScanner:
         current: dict[OpportunityKey, Opportunity] = {}
         for item in found:
             key = (item.kind, item.asset, item.fiat, item.buy_exchange, item.sell_exchange)
-            # Кілька ланцюжків можуть мати той самий ключ: лишається найкращий
             if key not in current or item.net_spread_pct > current[key].net_spread_pct:
                 current[key] = item
 

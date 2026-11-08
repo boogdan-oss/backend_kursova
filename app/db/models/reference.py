@@ -17,13 +17,13 @@ class Exchange(Base):
     __tablename__ = "exchanges"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    code: Mapped[str] = mapped_column(String(32), unique=True)  # "binance"
-    name: Mapped[str] = mapped_column(String(64))  # "Binance P2P"
+    code: Mapped[str] = mapped_column(String(32), unique=True)
+    name: Mapped[str] = mapped_column(String(64))
     api_url: Mapped[str] = mapped_column(String(255))
     status: Mapped[ExchangeStatus] = mapped_column(
         str_enum(ExchangeStatus), default=ExchangeStatus.ACTIVE
     )
-    last_ok_at: Mapped[datetime | None]  # останній успішний запит (NFR-05, /health)
+    last_ok_at: Mapped[datetime | None]
 
 
 class Asset(Base):
@@ -54,7 +54,6 @@ class PaymentMethod(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(64), unique=True)
     name: Mapped[str] = mapped_column(String(128))
-    # NULL — спосіб оплати не прив'язаний до однієї валюти (напр. Revolut)
     fiat_id: Mapped[int | None] = mapped_column(ForeignKey("fiats.id", ondelete="SET NULL"))
 
     aliases: Mapped[list["PaymentMethodAlias"]] = relationship(
@@ -108,8 +107,7 @@ class ExchangeMarket(Base):
     pair_id: Mapped[int] = mapped_column(
         ForeignKey("currency_pairs.id", ondelete="CASCADE"), primary_key=True
     )
-    # З довідника біржі й реальних оголошень: довідник перелічує лише частину способів оплати
     payment_methods: Mapped[list[str]] = mapped_column(ARRAY(String(64)))
-    listed_at: Mapped[datetime | None]  # NULL — пари ще не було в довіднику біржі
+    listed_at: Mapped[datetime | None]
     buy_fetched_at: Mapped[datetime | None]
     sell_fetched_at: Mapped[datetime | None]

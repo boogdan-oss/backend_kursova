@@ -71,7 +71,6 @@ async def test_fetch_offers_normalizes_sell_response(adapter: BybitAdapter) -> N
     first = offers[0]
     assert first.side == "SELL"
     assert first.price == Decimal("47.80")
-    # Заявлено 1619 USDT, але лишилось 50: доступний обсяг — поле lastQuantity
     assert first.available == Decimal(50)
     assert first.merchant.completion_rate == Decimal("0.86")
     assert first.payment_methods == ["oschadbank"]
@@ -247,7 +246,6 @@ async def test_list_markets_uses_active_symbols_and_fiat_payments(adapter: Bybit
     assert ("USDT", "UAH") in pairs
     assert ("BTC", "UAH") in pairs
     assert ("USDT", "EUR") in pairs
-    # Символ зі status 0 вимкнений
     assert ("ETH", "UAH") not in pairs
     usdt = next(market for market in markets if (market.asset, market.fiat) == ("USDT", "UAH"))
     assert usdt.exchange == "bybit"

@@ -13,6 +13,7 @@ from app.core.settings import Settings
 from app.db.repositories.market import MarketRow
 from app.services.collect_service import MarketStatsTracker
 from app.services.opportunity_service import OpportunityScanner
+from app.services.storage_service import StorageGuard
 from app.workers import collector as collector_module
 from app.workers.collector import ExchangeCollector, parse_pairs, run_every
 
@@ -24,10 +25,16 @@ def test_parse_pairs() -> None:
 @pytest.fixture
 async def collector() -> AsyncIterator[ExchangeCollector]:
     adapter = BinanceAdapter(AdaptiveRateLimiter(1000, 1000, 60))
-    settings = Settings(_env_file=None, collector_min_refresh_sec=0)  # type: ignore[call-arg]
+    settings = Settings(
+        _env_file=None,  # type: ignore[call-arg]
+        database_url="postgresql+asyncpg://test:test@127.0.0.1:1/test",
+        redis_url="redis://127.0.0.1:1/0",
+        collector_min_refresh_sec=0,
+    )
     tracker = MarketStatsTracker()
     scanner = OpportunityScanner(tracker, set())
-    yield ExchangeCollector(adapter, settings, asyncio.Event(), tracker, scanner)
+    storage = StorageGuard(budget_bytes=10**12)
+    yield ExchangeCollector(adapter, settings, asyncio.Event(), tracker, scanner, storage)
     await adapter.aclose()
 
 
@@ -96,6 +103,28 @@ async def test_failed_task_returns_to_queue(
     await run_worker(collector, monkeypatch, [ExchangeError("binance", "bad")])
 
     assert collector.scheduler._in_flight == set()
+
+
+async def test_worker_pauses_while_storage_is_full(
+    collector: ExchangeCollector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[CollectTask] = []
+
+    async def fake_collect(_: Any, task: CollectTask, __: Any) -> int:
+        calls.append(task)
+        return 20
+
+    async def stop_on_pause(stop: asyncio.Event, _: float) -> None:
+        stop.set()
+
+    collector._storage.full = True
+    collector.scheduler.add_pairs([("USDT", "UAH")])
+    monkeypatch.setattr(collector_module, "collect_task", fake_collect)
+    monkeypatch.setattr(collector_module, "pause", stop_on_pause)
+
+    await asyncio.wait_for(collector._worker(), timeout=5)
+
+    assert calls == []
 
 
 async def test_periodic_step_survives_exception(collector: ExchangeCollector) -> None:
@@ -169,7 +198,6 @@ async def test_exchange_status_follows_cooldown(
     monkeypatch.setattr(collector_module, "SessionLocal", FakeSession)
     monkeypatch.setattr(collector_module, "get_redis", lambda: None)
 
-    # Перший звіт скидає статус, що лишився від попереднього запуску
     await collector.report_status()
     assert saved == [("binance", "active")]
 

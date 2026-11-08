@@ -310,6 +310,5 @@ async def test_api_compares_exchanges_from_database(
     assert calculator.status_code == 200
     assert calculator.json()["buy_slippage_pct"] is not None
     assert history.status_code == 200
-    # API читає лише БД: жодного нового запиту до бірж
     assert respx.calls.call_count == requests_to_exchanges
     assert opportunity_service.OFFERS_MAX_AGE == timedelta(minutes=5)

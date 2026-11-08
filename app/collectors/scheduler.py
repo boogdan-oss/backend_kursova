@@ -5,17 +5,16 @@ from enum import IntEnum
 
 from app.domain import Side
 
-Pair = tuple[str, str]  # (asset, fiat)
+Pair = tuple[str, str]
 SIDES: tuple[Side, Side] = ("BUY", "SELL")
 
 
 class Priority(IntEnum):
-    HIGH = 0  # watchlist, alert_rules, пари, які щойно запитали через API (FR-17)
-    POPULAR = 1  # пари з великою кількістю оголошень
+    HIGH = 0
+    POPULAR = 1
     REST = 2
 
 
-# Частки бюджету запитів; те, що не використав один пріоритет, дістається іншим
 WEIGHTS = {Priority.HIGH: 6, Priority.POPULAR: 3, Priority.REST: 1}
 
 
@@ -89,7 +88,6 @@ class CollectScheduler:
             return None
 
         priority = min(oldest, key=lambda p: (max(self._passes[p], self._global_pass), p))
-        # max: пріоритет, що простоював, не забирає весь бюджет, коли знову з'являються задачі
         start = max(self._passes[priority], self._global_pass)
         self._passes[priority] = start + 1 / WEIGHTS[priority]
         self._global_pass = start

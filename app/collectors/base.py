@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
+from decimal import Decimal
 from email.utils import parsedate_to_datetime
 from typing import Any
 
@@ -14,6 +15,12 @@ HTTP_TIMEOUT_SEC = 10.0
 RETRY_ATTEMPTS = 3
 RETRY_BASE_SEC = 0.5
 USER_AGENT = "Mozilla/5.0 (CryptoParser)"
+APPROXIMATE_WITHDRAWAL_FEES = {
+    "USDT": Decimal("1.5"),
+    "USDC": Decimal("1.5"),
+    "BTC": Decimal("0.0005"),
+    "ETH": Decimal("0.005"),
+}
 
 
 class ExchangeError(Exception):

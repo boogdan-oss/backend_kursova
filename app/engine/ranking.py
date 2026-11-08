@@ -38,7 +38,6 @@ def _matches(item: Opportunity, criteria: OpportunityFilter) -> bool:
         criteria.min_spread is None or item.spread_pct >= criteria.min_spread,
         criteria.min_net_spread is None or item.net_spread_pct >= criteria.min_net_spread,
         criteria.min_volume is None or item.max_volume >= criteria.min_volume,
-        # Невідоме значення не проходить поріг: краще сховати, ніж показати як надійне
         criteria.min_ai_score is None
         or (item.ai_score is not None and item.ai_score >= criteria.min_ai_score),
         criteria.min_rr is None or (item.rr is not None and item.rr >= criteria.min_rr),

@@ -22,11 +22,11 @@ class MarketSnapshot(BaseModel):
     exchange: str
     asset: str
     fiat: str
-    payment_method: str | None = None  # None — по всіх способах оплати
-    buy_price: Decimal | None = None  # None — немає оголошень на стороні
+    payment_method: str | None = None
+    buy_price: Decimal | None = None
     sell_price: Decimal | None = None
-    spread_pct: Decimal | None = None  # (1.1)
-    volume: Decimal = Decimal(0)  # доступно в asset
+    spread_pct: Decimal | None = None
+    volume: Decimal = Decimal(0)
     offers_count_buy: int = Field(default=0, ge=0)
     offers_count_sell: int = Field(default=0, ge=0)
     fetched_at: AwareDatetime
@@ -38,7 +38,7 @@ class Freshness(BaseModel):
     exchange: str
     buy_fetched_at: AwareDatetime | None = None
     sell_fetched_at: AwareDatetime | None = None
-    age_sec: float | None = None  # вік найстарішої сторони; None — ще не збиралось
+    age_sec: float | None = None
     stale: bool = True
 
 
@@ -46,12 +46,12 @@ class CollectorStatus(BaseModel):
     """Стан collector по біржі, який API читає з Redis."""
 
     exchange: str
-    rps: float  # поточна швидкість rate limiter
-    rps_ceiling: float  # стеля, знайдена на блокуваннях біржі
+    rps: float
+    rps_ceiling: float
     limiter_state: Literal["ok", "paused", "cooldown"]
     paused_for_sec: float
-    tasks: dict[str, int]  # кількість задач за пріоритетами
-    requests_ok: int  # лічильники від запуску collector
+    tasks: dict[str, int]
+    requests_ok: int
     requests_failed: int
     rows_written: int
     started_at: AwareDatetime

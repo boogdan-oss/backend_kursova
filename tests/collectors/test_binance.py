@@ -70,7 +70,6 @@ async def test_fetch_offers_normalizes_sell_response(adapter: BinanceAdapter) ->
     assert first.side == "SELL"
     assert first.price == Decimal("49.00")
     assert first.min_amount == Decimal(350000)
-    # Заявлено 3 670 000, але залишку оголошення вистачає лише на 1 771 334
     assert first.max_amount == Decimal(1771334)
     assert [offer.price for offer in offers] == sorted(
         (offer.price for offer in offers), reverse=True
@@ -83,7 +82,6 @@ async def test_limits_are_in_fiat_not_in_asset(adapter: BinanceAdapter) -> None:
 
     offers = await adapter.fetch_offers("USDT", "UAH", "BUY")
 
-    # 11.45 USDT × 46.10 = 528 UAH: у полях мають бути гривні
     assert offers[0].max_amount == Decimal(528)
     assert offers[2].min_amount == Decimal(15000)
 
@@ -226,7 +224,6 @@ async def test_list_markets_reads_p2p_area_of_every_fiat(adapter: BinanceAdapter
     assert {market.asset for market in markets} >= {"USDT", "BTC", "ETH"}
     usdt = next(market for market in markets if market.asset == "USDT")
     assert usdt.exchange == "binance"
-    # Лише область P2P: Monobank IBAN є тільки в EXPRESS
     assert usdt.payment_methods == ["monobank", "privatbank", "abank", "pumb"]
 
 

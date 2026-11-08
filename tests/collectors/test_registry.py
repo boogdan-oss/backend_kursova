@@ -24,7 +24,7 @@ async def clean_registry() -> AsyncIterator[None]:
 
 
 def test_exchanges_are_registered() -> None:
-    assert {"binance", "bybit"} <= set(available_exchanges())
+    assert set(available_exchanges()) == {"binance", "bybit", "okx", "bitget", "mexc", "htx"}
 
 
 def test_fees_do_not_need_an_adapter_instance() -> None:
@@ -72,6 +72,11 @@ async def test_registered_adapter_fetches_through_its_own_client() -> None:
         ("RaiffeisenBankAval", "raiffeisen"),
         ("OTPBankNew", "otpbank"),
         ("Monobank (card)", "monobank"),
+        ("PUMB (CARD)", "pumb"),
+        ("A-Bank (CARD)", "abank"),
+        ("OSCHAD BANK (CARD)", "oschadbank"),
+        ("Raiffeisen Bank Aval (Card)", "raiffeisen"),
+        ("MONOBANK (IBAN)", "monobank_iban"),
         ("Privatbank (card)", "privatbank"),
         ("Privat Bank", "privatbank"),
         ("Monobank (IBAN)", "monobank_iban"),

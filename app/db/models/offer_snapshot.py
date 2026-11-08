@@ -21,13 +21,12 @@ class OfferSnapshot(Base):
     pair_id: Mapped[int] = mapped_column(ForeignKey("currency_pairs.id"))
     side: Mapped[Side] = mapped_column(str_enum(Side, length=4))
     price: Mapped[Decimal]
-    min_amount: Mapped[Decimal]  # ліміти у фіаті
+    min_amount: Mapped[Decimal]
     max_amount: Mapped[Decimal]
-    available: Mapped[Decimal]  # доступно в активі
-    # Нормалізовані ключі способів оплати; невідомі — сирий нормалізований id біржі
+    available: Mapped[Decimal]
     payment_methods: Mapped[list[str]] = mapped_column(ARRAY(String(64)))
     merchant_id: Mapped[int | None] = mapped_column(ForeignKey("merchants.id"))
-    external_id: Mapped[str | None] = mapped_column(String(128))  # номер оголошення на біржі
+    external_id: Mapped[str | None] = mapped_column(String(128))
 
 
 Index(

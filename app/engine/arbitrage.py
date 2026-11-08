@@ -16,17 +16,13 @@ from app.engine.ranking import rank_opportunities
 from app.engine.scoring import ScoreInputs, potential_loss, risk_reward, score_opportunity
 from app.engine.spreads import PERCENT_PRECISION, round_money
 
-PairKey = tuple[str, str]  # (asset, fiat)
+PairKey = tuple[str, str]
 FeeMap = Mapping[str, FeeSchedule]
 
-# Рух ціни проти нас, поки угода незавершена, якщо історія волатильності невідома
 DEFAULT_ADVERSE_MOVE_PCT = Decimal("0.5")
 MAX_CHAIN_STEPS = 4
-BANK = "bank"  # фіат лежить на рахунку в банку і однаково доступний на всіх біржах
-# Менше оголошень — це не ринок: медіана одного-двох лотів не захищає від фейкових цін
+BANK = "bank"
 MIN_MARKET_OFFERS = 3
-# Такий спред на P2P означає нетипові оголошення, а не прибуток: у живих даних BTC/USD давав
-# +41 %, бо покупці платили в півтора раза більше за ринок. Такі угоди не рекомендуємо
 ANOMALY_SPREAD_PCT = Decimal(5)
 
 
@@ -76,7 +72,7 @@ def _evaluate(
     asset, fiat = pair
     is_transfer = buy_exchange != sell_exchange
     if is_transfer and asset not in fees[buy_exchange].withdrawal_fees:
-        return None  # без комісії виводу чистий прибуток був би завищений
+        return None
 
     reliable_buy, reliable_sell = filter_reliable(buy_offers), filter_reliable(sell_offers)
     amount = investment
@@ -92,7 +88,6 @@ def _evaluate(
     if buy_price is None or len(usable_buy) < MIN_MARKET_OFFERS:
         return None
     quantity = quantity_for(amount, buy_price)
-    # Сума продажу інша, ніж купівлі, і перевіряти ліміти покупців треба саме на неї
     usable_sell = filter_by_amount(reliable_sell, quantity * sell_estimate)
     sell_price = effective_price(usable_sell)
     if sell_price is None or len(usable_sell) < MIN_MARKET_OFFERS:
@@ -205,17 +200,16 @@ def _build_graph(quotes: Iterable[MarketSnapshot], fees: FeeMap) -> nx.DiGraph:
     for asset, exchanges in holders.items():
         for source, target in product(exchanges, repeat=2):
             if source != target and asset in fees[source].withdrawal_fees:
-                # Комісія фіксована і залежить від суми, точний облік — у _walk
                 graph.add_edge((source, asset), (target, asset), weight=0.0, action="TRANSFER")
     return graph
 
 
 @dataclass(frozen=True, slots=True)
 class _Walk:
-    net: Decimal  # сума після циклу з комісіями
-    gross: Decimal  # сума після циклу без комісій
+    net: Decimal
+    gross: Decimal
     steps: list[Step]
-    capacity: Decimal  # скільки першого активу витримують усі ланки
+    capacity: Decimal
 
 
 def _walk(
@@ -248,7 +242,6 @@ def _walk(
             net, gross = net * price * (1 - rate), gross * price
         if held > quote.volume:
             return None
-        # Обсяг ланки в її активі, перерахований у перший актив циклу
         capacity = min(capacity, quote.volume * first_quantity / held)
         steps.append(Step(exchange=quote.exchange, action=action, asset=quote.asset, price=price))
     return _Walk(net, gross, steps, capacity)

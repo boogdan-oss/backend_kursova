@@ -24,7 +24,7 @@ CodeQuery = Annotated[str | None, Query(pattern=CODE_PATTERN)]
 
 
 class OpportunityItem(Opportunity):
-    ai_category: str | None = None  # шкала AI Score
+    ai_category: str | None = None
 
 
 class OpportunitiesResponse(BaseModel):
@@ -71,10 +71,10 @@ class CalculatorRequest(BaseModel):
 class CalculatorResponse(BaseModel):
     deal: Deal
     potential_loss: Decimal
-    rr: Decimal | None  # (1.6)
-    buy_slippage_pct: Decimal | None  # (1.8); None — ціну задано вручну
+    rr: Decimal | None
+    buy_slippage_pct: Decimal | None
     sell_slippage_pct: Decimal | None
-    fully_filled: bool  # False — у стакані не вистачило оголошень на всю суму
+    fully_filled: bool
 
 
 def _item(opportunity: Opportunity) -> OpportunityItem:

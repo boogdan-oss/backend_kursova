@@ -23,11 +23,9 @@ from app.db.models import (
 )
 from app.domain import MarketSnapshot, P2PMarket, Side
 
-# Точний count(*) на hypertable дорогий; до цього розміру він усе ще миттєвий
 EXACT_COUNT_MAX_ROWS = 1_000_000
-HYPERTABLES = ("offer_snapshots", "market_stats")
+HYPERTABLES = ("offer_snapshots", "market_stats", "spread_history", "opportunities", "predictions")
 
-# Об'єднання способів оплати при upsert: без дублікатів і в стабільному порядку
 _MERGED_PAYMENTS: ColumnClause[Any] = literal_column(
     "ARRAY(SELECT DISTINCT unnest("
     "exchange_markets.payment_methods || excluded.payment_methods) ORDER BY 1)"
@@ -72,7 +70,7 @@ class ExchangeOverview:
 class TableStats:
     table: str
     rows: int
-    exact: bool  # False — оцінка TimescaleDB
+    exact: bool
     size_mb: float
 
 
@@ -281,7 +279,6 @@ async def market_history(
             MarketStats.time >= start,
             MarketStats.time < end,
         )
-        # За псевдонімом: інакше Postgres бачить два різні параметри interval
         .group_by(text("bucket"))
         .order_by(text("bucket"))
     )
@@ -329,3 +326,30 @@ async def table_stats(session: AsyncSession) -> list[TableStats]:
             rows = (await session.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one()
         result.append(TableStats(table, rows, exact, round((size or 0) / 1024 / 1024, 2)))
     return result
+
+
+async def storage_bytes(session: AsyncSession) -> int:
+    """Скільки місця на диску займають дані збору: усі hypertables разом зі стиснутими чанками."""
+    total = 0
+    for table in HYPERTABLES:
+        total += (await session.execute(select(func.hypertable_size(table)))).scalar_one() or 0
+    return total
+
+
+async def drop_oldest_offer_chunk(session: AsyncSession) -> datetime | None:
+    """Видаляє найстаріший чанк (день) offer_snapshots і повертає, до якого часу видалено.
+
+    Поточний чанк не чіпає: туди йде запис. None — видаляти нічого.
+    """
+    query = text(
+        "SELECT range_end FROM timescaledb_information.chunks "
+        "WHERE hypertable_name = 'offer_snapshots' ORDER BY range_start LIMIT 2"
+    )
+    ends = (await session.execute(query)).scalars().all()
+    if len(ends) < 2:
+        return None
+    await session.execute(
+        text("SELECT drop_chunks('offer_snapshots', older_than => CAST(:end AS timestamptz))"),
+        {"end": ends[0]},
+    )
+    return ends[0]

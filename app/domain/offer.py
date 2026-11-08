@@ -11,15 +11,15 @@ Side = Literal["BUY", "SELL"]
 class Offer(BaseModel):
     """Нормалізоване P2P-оголошення — вихід будь-якого `ExchangeAdapter`."""
 
-    exchange: str  # "binance"
-    side: Side  # з погляду користувача
-    asset: str  # "USDT", "BTC", ...
-    fiat: str  # "UAH", "EUR", ...
+    exchange: str
+    side: Side
+    asset: str
+    fiat: str
     price: Decimal = Field(gt=0)
-    min_amount: Decimal = Field(ge=0)  # ліміти у фіаті
+    min_amount: Decimal = Field(ge=0)
     max_amount: Decimal = Field(ge=0)
-    available: Decimal = Field(ge=0)  # доступно в asset
-    payment_methods: list[str]  # нормалізовані ключі: "monobank", "revolut", "sepa"
+    available: Decimal = Field(ge=0)
+    payment_methods: list[str]
     merchant: Merchant
     fetched_at: AwareDatetime
-    external_id: str | None = None  # номер оголошення на біржі
+    external_id: str | None = None

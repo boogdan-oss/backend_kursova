@@ -125,7 +125,6 @@ def test_fill_order_reports_shortage() -> None:
 
 
 def test_fill_order_respects_fiat_limit_of_offer() -> None:
-    # Доступно 600 USDT, але за одну угоду оголошення приймає лише 4120 UAH = 100 USDT
     offers = [
         make_offer("41.20", available="600", min_amount="1", max_amount="4120"),
         make_offer("41.30", available="600", **WIDE_LIMITS),

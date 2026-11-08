@@ -1,16 +1,14 @@
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
-# Ваги (1.9): S_net, S_liq, S_rr, S_stab, S_vol, S_volat
 WEIGHTS = tuple(Decimal(weight) for weight in ("0.30", "0.20", "0.20", "0.15", "0.10", "0.05"))
 
-# Межі нормування S_* до 0–100: значення на верхній межі дає 100 балів
 NET_SPREAD_FULL_PCT = Decimal(3)
-OFFERS_FULL = Decimal(10)  # стільки надійних контрагентів на тоншій стороні
+OFFERS_FULL = Decimal(10)
 RR_MIN, RR_FULL = Decimal(1), Decimal(5)
-VOLUME_MIN_RATIO, VOLUME_FULL_RATIO = Decimal(1), Decimal(5)  # обсяг ринку / обсяг угоди
+VOLUME_MIN_RATIO, VOLUME_FULL_RATIO = Decimal(1), Decimal(5)
 VOLATILITY_WORST_PCT = Decimal(2)
-UNKNOWN_SCORE = Decimal(50)  # немає історії — нейтрально, а не штраф
+UNKNOWN_SCORE = Decimal(50)
 
 SCORE_SCALE = (
     (92, "Excellent Opportunity"),
@@ -27,8 +25,8 @@ class ScoreInputs:
     offers_count: int
     volume_ratio: Decimal
     rr: Decimal | None
-    stability_pct: Decimal | None  # частка часу з додатним чистим спредом
-    volatility_pct: Decimal | None  # std ціни / середня ціна
+    stability_pct: Decimal | None
+    volatility_pct: Decimal | None
 
 
 def risk_reward(profit: Decimal, loss: Decimal) -> Decimal | None:

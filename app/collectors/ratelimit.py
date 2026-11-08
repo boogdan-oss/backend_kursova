@@ -6,14 +6,12 @@ from typing import Literal
 LimiterState = Literal["ok", "paused", "cooldown"]
 
 MIN_RPS = 0.1
-RPS_STEP = 0.5  # адитивне зростання
+RPS_STEP = 0.5
 SUCCESSES_PER_STEP = 20
-# Після блокування стеля нижча за швидкість, на якій воно сталося; перевіряти її можна лише
-# зрідка: блокує WAF за кількістю запитів у вікні, і кожна спроба — ризик довшого бану IP
 CEILING_FACTOR = 0.7
 SUCCESSES_PER_PROBE = 5000
-BACKOFF_FACTOR = 0.5  # мультиплікативне падіння на блокуванні
-BLOCK_PAUSE_SEC = 5.0  # якщо біржа не надіслала Retry-After
+BACKOFF_FACTOR = 0.5
+BLOCK_PAUSE_SEC = 5.0
 BLOCKS_BEFORE_COOLDOWN = 3
 
 
@@ -99,12 +97,9 @@ class AdaptiveRateLimiter:
         now = self._clock()
         self._successes = 0
         if now < self._paused_until:
-            # Відповіді запитів, що вже були в дорозі, — це те саме блокування
             self._paused_until = max(self._paused_until, now + (retry_after or 0.0))
             return
 
-        # Лише перше блокування серії каже про швидкість: наступні — це ще той самий бан,
-        # і від зниженої вже швидкості стеля впала б майже до нуля
         if self._blocks_in_row == 0:
             self._ceiling = max(MIN_RPS, self._rps * CEILING_FACTOR)
         self._rps = max(MIN_RPS, self._rps * BACKOFF_FACTOR)

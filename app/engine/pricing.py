@@ -15,11 +15,11 @@ TOP_OFFERS = 5
 class Fill:
     """Результат проходження рівнів однієї сторони (FR-14, FR-15)."""
 
-    quantity: Decimal  # скільки вдалося набрати
-    average_price: Decimal  # (1.7)
+    quantity: Decimal
+    average_price: Decimal
     best_price: Decimal
-    slippage_pct: Decimal  # (1.8) за модулем: втрата від глибини на обох сторонах
-    complete: bool  # False — рівнів не вистачило на всю кількість
+    slippage_pct: Decimal
+    complete: bool
 
 
 def _best_first(offers: list[Offer]) -> list[Offer]:

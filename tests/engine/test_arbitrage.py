@@ -88,7 +88,6 @@ def test_cross_exchange_control_example() -> None:
     assert (found.buy_exchange, found.sell_exchange) == ("binance", "bybit")
     assert (found.buy_price, found.sell_price) == (Decimal("41.00"), Decimal("41.80"))
     assert found.spread_pct == Decimal("1.9512")
-    # 487.80 USDT мінус 1 USDT за вивід: 486.80 · 41.80 − 20 000
     assert round(found.estimated_profit) == 348
     assert found.net_spread_pct == pytest.approx(Decimal("1.74"), abs=Decimal("0.01"))
     assert found.investment == 20000
@@ -105,7 +104,6 @@ def test_transfer_fee_can_eat_profit() -> None:
         offer("bybit", "SELL", "41.05"),
     ]
 
-    # Спред +0.12 %, але 1 USDT за вивід на суму 2000 UAH — це вже 2 %
     assert find(offers, FEES, NOW, investment=Decimal(2000)) == []
 
 
@@ -337,7 +335,6 @@ def snapshot(
     )
 
 
-# UAH → USDT → EUR → USDC → UAH: кожна ланка в межах своєї пари, цикл прибутковий
 PROFITABLE_LOOP = [
     snapshot("binance", "USDT", "UAH", "41.00", "40.50"),
     snapshot("binance", "USDT", "EUR", "0.97", "0.95"),
@@ -357,7 +354,6 @@ def test_chain_closes_on_starting_fiat_with_profit() -> None:
     assert best.estimated_profit > 0
     assert [step.action for step in best.steps] == ["BUY", "SELL", "BUY", "SELL"]
     assert [step.asset for step in best.steps] == ["USDT", "USDT", "USDC", "USDC"]
-    # 20 000 / 41 · 0.95 / 0.93 · 41.50 = 20 679
     assert round(best.estimated_profit) == 679
 
 
@@ -424,7 +420,6 @@ def test_anomalous_chain_is_not_recommended() -> None:
 
 
 def test_chain_max_volume_is_measured_in_first_asset() -> None:
-    # Кожна ланка має свій актив: тонша ланка — 1000 USDC ≈ 979 USDT за курсом циклу
     loop = [
         snapshot("binance", "USDT", "UAH", "41.00", "40.50", "5000"),
         snapshot("binance", "USDT", "EUR", "0.97", "0.95", "5000"),

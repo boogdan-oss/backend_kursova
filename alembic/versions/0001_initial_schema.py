@@ -26,7 +26,6 @@ TZ = sa.DateTime(timezone=True)
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS timescaledb")
 
-    # --- Довідники ---
     op.create_table(
         "exchanges",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -117,7 +116,6 @@ def upgrade() -> None:
         ),
     )
 
-    # --- Користувачі ---
     op.create_table(
         "users",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -138,7 +136,6 @@ def upgrade() -> None:
         ),
     )
 
-    # --- Продавці ---
     op.create_table(
         "merchants",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -163,7 +160,6 @@ def upgrade() -> None:
         ),
     )
 
-    # --- Часові ряди (hypertables: PK складений (id, time)) ---
     op.create_table(
         "offer_snapshots",
         sa.Column("id", sa.BigInteger(), sa.Identity(), nullable=False),
@@ -228,7 +224,6 @@ def upgrade() -> None:
         ["pair_id", "exchange_id", sa.text("time DESC")],
     )
 
-    # create_default_indexes => FALSE: індекси по time вже покриті нашими складеними
     op.execute(
         "SELECT create_hypertable('offer_snapshots', 'time', "
         "chunk_time_interval => INTERVAL '1 day', create_default_indexes => FALSE)"
@@ -238,7 +233,6 @@ def upgrade() -> None:
         "chunk_time_interval => INTERVAL '7 days', create_default_indexes => FALSE)"
     )
 
-    # offer_snapshots — найоб'ємніша таблиця: стиснення старших за 7 днів, retention 30 днів
     op.execute(
         "ALTER TABLE offer_snapshots SET ("
         "timescaledb.compress, "
@@ -250,7 +244,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Політики й чанки TimescaleDB видаляються разом із hypertable
     op.drop_table("market_stats")
     op.drop_table("offer_snapshots")
     op.drop_table("merchants")

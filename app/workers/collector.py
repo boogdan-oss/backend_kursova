@@ -28,17 +28,19 @@ from app.pubsub import close_redis, get_redis
 from app.services.collect_service import MarketStatsTracker, collect_task, refresh_markets
 from app.services.collector_state import publish_status, wanted_pairs
 from app.services.opportunity_service import OpportunityScanner
+from app.services.storage_service import GIB, StorageGuard
 
-IDLE_SEC = 0.1  # усі задачі в роботі або щойно оновлені
-FAILURE_PAUSE_SEC = 5.0  # БД недоступна: нема сенсу витрачати запити до біржі
+IDLE_SEC = 0.1
+FAILURE_PAUSE_SEC = 5.0
 PRIORITIES_INTERVAL_SEC = 2.0
 STATUS_INTERVAL_SEC = 5.0
 PROGRESS_INTERVAL_SEC = 30.0
 MARKETS_CHECK_INTERVAL_SEC = 600.0
 MARKETS_MAX_AGE = timedelta(days=1)
 OPPORTUNITIES_INTERVAL_SEC = 30.0
+STORAGE_CHECK_INTERVAL_SEC = 600.0
+STORAGE_FULL_PAUSE_SEC = 60.0
 NEVER_FETCHED = datetime.min.replace(tzinfo=UTC)
-# Від такої кількості оголошень на стороні пара вважається популярною: це повна сторінка
 POPULAR_MIN_OFFERS = 20
 
 log = structlog.get_logger()
@@ -84,6 +86,7 @@ class ExchangeCollector:
         stop: asyncio.Event,
         tracker: MarketStatsTracker,
         scanner: OpportunityScanner,
+        storage: StorageGuard,
     ) -> None:
         self.adapter = adapter
         self.scheduler = CollectScheduler(
@@ -92,11 +95,11 @@ class ExchangeCollector:
         self.counters = CollectorCounters()
         self._tracker = tracker
         self._scanner = scanner
+        self._storage = storage
         self._settings = settings
         self._stop = stop
         self._priority_pairs = parse_pairs(settings.collector_priority_pairs)
         self._started_at = datetime.now(UTC)
-        # None: перший звіт перезапише статус, який лишився від попереднього запуску
         self._exchange_status: ExchangeStatus | None = None
 
     async def run(self) -> None:
@@ -110,6 +113,9 @@ class ExchangeCollector:
 
     async def _worker(self) -> None:
         while not self._stop.is_set():
+            if self._storage.full:
+                await pause(self._stop, STORAGE_FULL_PAUSE_SEC)
+                continue
             task = self.scheduler.next_task()
             if task is None:
                 await pause(self._stop, IDLE_SEC)
@@ -132,7 +138,6 @@ class ExchangeCollector:
                 self.counters.requests_failed += 1
                 log.warning("collector.fetch_failed", task=str(task), detail=exc.detail)
             except Exception as exc:
-                # Збій БД чи баг не мають зупиняти збір інших пар (NFR-05)
                 self.counters.requests_failed += 1
                 log.error("collector.task_failed", task=str(task), error=repr(exc))
                 await pause(self._stop, FAILURE_PAUSE_SEC)
@@ -151,7 +156,6 @@ class ExchangeCollector:
 
     async def update_markets(self) -> None:
         """Довідник бірж раз на добу; згодом це перейде в Celery Beat (розділ 3)."""
-        # Спершу відомі пари: збір не має чекати оновлення довідника чи страждати від його збою
         listed_at = await self._load_known_pairs()
         if listed_at is None or datetime.now(UTC) - listed_at > MARKETS_MAX_AGE:
             count = await refresh_markets(self.adapter)
@@ -162,7 +166,6 @@ class ExchangeCollector:
         async with SessionLocal() as session:
             markets = await find_markets(session, self.adapter.name)
             listed_at = await markets_listed_at(session, self.adapter.name)
-        # Найдавніше оновлені першими: після перезапуску збір продовжує коло, а не починає спочатку
         oldest_first = sorted(markets, key=lambda market: market.buy_fetched_at or NEVER_FETCHED)
         self.scheduler.add_pairs((market.asset, market.fiat) for market in oldest_first)
         return listed_at
@@ -185,7 +188,6 @@ class ExchangeCollector:
                 updated_at=datetime.now(UTC),
             ),
         )
-        # Кулдаун — біржа тимчасово виключена з аналізу (NFR-05)
         status = ExchangeStatus.DEGRADED if limiter.state == "cooldown" else ExchangeStatus.ACTIVE
         if status != self._exchange_status:
             async with SessionLocal() as session, session.begin():
@@ -218,25 +220,27 @@ async def run() -> None:
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        # На Windows обробники сигналів asyncio недоступні: там зупиняє KeyboardInterrupt
         with suppress(NotImplementedError):
             loop.add_signal_handler(sig, stop.set)
 
     log.info("collector.startup", exchanges=names)
-    # Спільний для всіх бірж: міжбіржове порівняння потребує оголошень з усіх одразу
     tracker = MarketStatsTracker()
     scanner = OpportunityScanner(tracker, parse_pairs(settings.collector_priority_pairs))
+    budget = int(settings.collector_storage_gb_per_exchange * len(names) * GIB)
+    storage = StorageGuard(budget)
+    log.info("collector.storage_budget", budget_gb=round(budget / GIB, 1), exchanges=len(names))
     collectors = [
-        ExchangeCollector(get_adapter(name), settings, stop, tracker, scanner) for name in names
+        ExchangeCollector(get_adapter(name), settings, stop, tracker, scanner, storage)
+        for name in names
     ]
     try:
-        # Збій однієї біржі не зупиняє інші (NFR-05)
         results = await asyncio.gather(
             *(collector.run() for collector in collectors),
             run_every(stop, OPPORTUNITIES_INTERVAL_SEC, scanner.scan),
+            run_every(stop, STORAGE_CHECK_INTERVAL_SEC, storage.enforce),
             return_exceptions=True,
         )
-        for name, result in zip([*names, "opportunities"], results, strict=True):
+        for name, result in zip([*names, "opportunities", "storage"], results, strict=True):
             if isinstance(result, Exception):
                 log.error("collector.exchange_crashed", exchange=name, error=repr(result))
     finally:

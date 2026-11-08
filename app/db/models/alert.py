@@ -34,7 +34,7 @@ class AlertRule(TimestampMixin, Base):
     min_net_spread: Mapped[Decimal | None] = mapped_column(Percent)
     min_ai_score: Mapped[int | None] = mapped_column(SmallInteger)
     min_rr: Mapped[Decimal | None] = mapped_column(Percent)
-    min_net_profit: Mapped[Decimal | None]  # у фіаті пари
+    min_net_profit: Mapped[Decimal | None]
     channels: Mapped[list[str]] = mapped_column(
         ARRAY(String(16)), default=lambda: [NotificationChannel.IN_APP.value]
     )
@@ -49,7 +49,6 @@ class Notification(Base):
     alert_rule_id: Mapped[int | None] = mapped_column(
         ForeignKey("alert_rules.id", ondelete="SET NULL")
     )
-    # Без FK: opportunities — hypertable зі складеним PK (id, time)
     opportunity_id: Mapped[int | None] = mapped_column(BigInteger)
     channel: Mapped[NotificationChannel] = mapped_column(str_enum(NotificationChannel))
     sent_at: Mapped[datetime] = mapped_column(server_default=func.now())

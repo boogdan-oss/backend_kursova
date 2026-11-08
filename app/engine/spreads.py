@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 PERCENT_PRECISION = Decimal("0.0001")
-MONEY_PRECISION = Decimal("0.00000001")  # як Numeric(28, 8) у БД
+MONEY_PRECISION = Decimal("0.00000001")
 
 
 def _percent(value: Decimal) -> Decimal:

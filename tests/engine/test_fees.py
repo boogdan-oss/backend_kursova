@@ -61,7 +61,6 @@ def test_percent_fees_reduce_profit_on_both_sides() -> None:
 
     deal = calculate_deal(Decimal(10000), Decimal(40), Decimal(41), buy_fees, sell_fees)
 
-    # Купівля: 250 USDT, комісія 10 UAH. Продаж: 10 250 UAH, комісія 20.50 UAH
     assert deal.fees == Decimal("30.50")
     assert deal.net_profit == Decimal("219.50")
 
@@ -133,7 +132,6 @@ def test_deal_matches_cross_exchange_formula(f_buy: str, f_sell: str, transfer: 
 
 
 def test_cross_exchange_formula_by_hand() -> None:
-    # 42 · 0.999 · 99 / (41 · 1.001 · 100) − 1 = 1.21 %
     profit = cross_exchange_profit_pct(
         Decimal(41), Decimal(42), Decimal(100), Decimal("0.001"), Decimal("0.001"), Decimal(1)
     )

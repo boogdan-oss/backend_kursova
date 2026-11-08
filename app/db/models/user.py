@@ -17,7 +17,5 @@ class User(TimestampMixin, Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[UserRole] = mapped_column(str_enum(UserRole), default=UserRole.USER)
     status: Mapped[UserStatus] = mapped_column(str_enum(UserStatus), default=UserStatus.ACTIVE)
-    # Персональні налаштування (/me/settings): комісії, мін. RR, сума інвестиції тощо
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
-    # Для каналу сповіщень Telegram; NULL — користувач не підключив бота
     telegram_chat_id: Mapped[str | None] = mapped_column(String(64))

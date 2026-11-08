@@ -306,7 +306,6 @@ async def test_payments_from_offers_extend_directory(
         listed_at = await markets_listed_at(session, "binance")
         directory = (await session.execute(select(PaymentMethod.code))).scalars().all()
     assert len(markets) == pairs
-    # 4 способи оплати з довідника + ті, що трапились лише в реальних оголошеннях
     assert {"monobank", "privatbank", "abank", "pumb"} <= set(usdt.payment_methods)
     assert len(usdt.payment_methods) > 4
     assert usdt.payment_methods == sorted(set(usdt.payment_methods))
@@ -435,5 +434,4 @@ async def test_api_serves_collected_data_end_to_end(
 
     assert markets.json()["count"] == 1
     assert history.json()["count"] == 1
-    # API читає лише БД: жодного нового запиту до біржі
     assert respx.calls.call_count == requests_to_exchange

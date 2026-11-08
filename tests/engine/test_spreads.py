@@ -8,7 +8,7 @@ from app.engine.spreads import net_spread_pct, price_difference, roi_pct, spread
 @pytest.mark.parametrize(
     ("buy", "sell", "expected"),
     [
-        ("62400", "62800", "0.64"),  # контрольні приклади (CLAUDE.md, розділ 6)
+        ("62400", "62800", "0.64"),
         ("41.20", "41.85", "1.58"),
         ("41.10", "42.00", "2.19"),
     ],

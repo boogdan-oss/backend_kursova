@@ -13,8 +13,8 @@ class Step(BaseModel):
     exchange: str
     action: Literal["BUY", "SELL", "TRANSFER"]
     asset: str
-    price: Decimal | None = None  # None для TRANSFER
-    payment_method: str | None = None  # банк / спосіб оплати
+    price: Decimal | None = None
+    payment_method: str | None = None
 
 
 class Opportunity(BaseModel):
@@ -26,13 +26,13 @@ class Opportunity(BaseModel):
     buy_price: Decimal
     sell_price: Decimal
     steps: list[Step]
-    spread_pct: Decimal  # (1.1), до комісій
-    net_spread_pct: Decimal  # (1.3), після комісій
-    estimated_profit: Decimal  # у фіаті, для суми інвестиції
+    spread_pct: Decimal
+    net_spread_pct: Decimal
+    estimated_profit: Decimal
     max_volume: Decimal
-    rr: Decimal | None = None  # (1.6)
-    risk_score: float | None = Field(default=None, ge=0, le=1)  # від AI
+    rr: Decimal | None = None
+    risk_score: float | None = Field(default=None, ge=0, le=1)
     risk_level: RiskLevel | None = None
-    ai_score: int | None = Field(default=None, ge=0, le=100)  # (1.9)
-    investment: Decimal | None = None  # сума, для якої пораховано estimated_profit
+    ai_score: int | None = Field(default=None, ge=0, le=100)
+    investment: Decimal | None = None
     detected_at: AwareDatetime

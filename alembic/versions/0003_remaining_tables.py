@@ -24,7 +24,6 @@ TZ = sa.DateTime(timezone=True)
 
 
 def upgrade() -> None:
-    # --- Часові ряди (hypertables: PK складений (id, time)) ---
     op.create_table(
         "spread_history",
         sa.Column("id", sa.BigInteger(), sa.Identity(), nullable=False),
@@ -127,14 +126,12 @@ def upgrade() -> None:
     )
     op.create_index("ix_predictions_pair_time", "predictions", ["pair_id", sa.text("time DESC")])
 
-    # create_default_indexes => FALSE: індекси по time вже покриті нашими складеними
     for table in ("spread_history", "opportunities", "predictions"):
         op.execute(
             f"SELECT create_hypertable('{table}', 'time', "
             "chunk_time_interval => INTERVAL '7 days', create_default_indexes => FALSE)"
         )
 
-    # --- Smart Alerts і Watchlist ---
     op.create_table(
         "alert_rules",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -233,7 +230,6 @@ def upgrade() -> None:
         ),
     )
 
-    # --- Спільнота ---
     op.create_table(
         "posts",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -383,7 +379,6 @@ def downgrade() -> None:
     op.drop_table("watchlist")
     op.drop_table("notifications")
     op.drop_table("alert_rules")
-    # Чанки TimescaleDB видаляються разом із hypertable
     op.drop_table("predictions")
     op.drop_table("opportunities")
     op.drop_table("spread_history")

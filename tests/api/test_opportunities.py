@@ -82,7 +82,6 @@ async def test_opportunities_after_fees(client: AsyncClient, repos: FakeReposito
     item = body["items"][0]
     assert item["kind"] == "cross_exchange"
     assert (item["buy_exchange"], item["sell_exchange"]) == ("binance", "bybit")
-    # 1.5 USDT за вивід з Binance
     assert Decimal(item["estimated_profit"]) == pytest.approx(
         Decimal("327.54"), abs=Decimal("0.01")
     )
@@ -146,7 +145,6 @@ async def test_scanner_without_pair_filter_works(
 async def test_typical_small_deal_can_be_eaten_by_withdrawal_fee(
     client: AsyncClient, repos: FakeRepositories
 ) -> None:
-    # Типова сума 100 UAH — це 2.4 USDT, а вивід коштує 1.5 USDT
     response = await client.get("/api/v1/opportunities")
 
     assert response.json()["count"] == 0
@@ -198,7 +196,6 @@ async def test_calculator_control_example(client: AsyncClient, repos: FakeReposi
     assert round(Decimal(deal["roi_pct"]), 1) == Decimal("1.5")
     assert body["buy_slippage_pct"] is None
     assert body["fully_filled"] is True
-    # 90 + 0.5 % від 20 000 = 190; RR = 300.24 / 190
     assert Decimal(body["potential_loss"]) == 190
     assert body["rr"] == "1.5802"
 
@@ -223,7 +220,6 @@ async def test_calculator_takes_prices_from_market(
     assert Decimal(body["deal"]["sell_price"]) == Decimal("41.80")
     assert Decimal(body["buy_slippage_pct"]) == 0
     assert body["fully_filled"] is True
-    # Вивід між біржами враховано: 1.5 USDT з Binance
     assert Decimal(body["deal"]["sell_quantity"]) < Decimal(body["deal"]["quantity"])
 
 

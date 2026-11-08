@@ -6,7 +6,6 @@ from typing import Any
 from sqlalchemy import DateTime, Enum, MetaData, Numeric, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-# Стабільні імена обмежень — щоб Alembic autogenerate давав передбачувані міграції
 NAMING_CONVENTION = {
     "ix": "ix_%(column_0_label)s",
     "uq": "uq_%(table_name)s_%(column_0_N_name)s",
@@ -15,9 +14,7 @@ NAMING_CONVENTION = {
     "pk": "pk_%(table_name)s",
 }
 
-# Гроші й ціни (P2P ціна BTC у фіаті може бути дуже великою, обсяг — дуже малим)
 Money = Numeric(28, 8)
-# Відсотки (Spread, Net Spread, ROI) і відношення (RR)
 Percent = Numeric(12, 4)
 
 

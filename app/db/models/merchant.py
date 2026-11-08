@@ -18,8 +18,8 @@ class Merchant(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     exchange_id: Mapped[int] = mapped_column(ForeignKey("exchanges.id", ondelete="CASCADE"))
-    external_id: Mapped[str] = mapped_column(String(128))  # id продавця на біржі
+    external_id: Mapped[str] = mapped_column(String(128))
     nickname: Mapped[str] = mapped_column(String(128))
     orders_30d: Mapped[int] = mapped_column(default=0)
-    completion_rate: Mapped[Decimal] = mapped_column(Numeric(5, 4))  # частка 0–1
+    completion_rate: Mapped[Decimal] = mapped_column(Numeric(5, 4))
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

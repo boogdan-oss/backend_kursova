@@ -1,14 +1,21 @@
 from app.collectors.base import ExchangeAdapter
 from app.collectors.binance import BinanceAdapter
+from app.collectors.bitget import BitgetAdapter
 from app.collectors.bybit import BybitAdapter
+from app.collectors.htx import HtxAdapter
+from app.collectors.mexc import MexcAdapter
+from app.collectors.okx import OkxAdapter
 from app.collectors.ratelimit import AdaptiveRateLimiter
 from app.core.config import get_settings
 from app.domain import FeeSchedule
 
-# Нова біржа = новий клас адаптера + рядок тут
 ADAPTER_CLASSES: dict[str, type[ExchangeAdapter]] = {
     BinanceAdapter.name: BinanceAdapter,
     BybitAdapter.name: BybitAdapter,
+    OkxAdapter.name: OkxAdapter,
+    BitgetAdapter.name: BitgetAdapter,
+    MexcAdapter.name: MexcAdapter,
+    HtxAdapter.name: HtxAdapter,
 }
 
 _instances: dict[str, ExchangeAdapter] = {}

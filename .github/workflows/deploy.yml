@@ -21,6 +21,10 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # .env у CI немає, а без адрес налаштування не завантажаться; самих БД і Redis тут немає
+    env:
+      DATABASE_URL: postgresql+asyncpg://ci:ci@127.0.0.1:1/ci
+      REDIS_URL: redis://127.0.0.1:1/0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

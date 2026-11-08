@@ -173,7 +173,6 @@ async def fresh_offers(
     query = (
         select(OfferSnapshot, Merchant)
         .join(Merchant, Merchant.id == OfferSnapshot.merchant_id)
-        # Умова на time окремо: так TimescaleDB не чіпає старі чанки
         .where(OfferSnapshot.time >= since, key.in_(batches))
     )
     return [

@@ -5,7 +5,6 @@ import structlog
 
 def setup_logging(level: str = "INFO") -> None:
     logging.basicConfig(format="%(message)s", level=level)
-    # httpx пише кожен запит на рівні INFO: для collector це сотні тисяч рядків на добу
     logging.getLogger("httpx").setLevel(logging.WARNING)
     structlog.configure(
         processors=[

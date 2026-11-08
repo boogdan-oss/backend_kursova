@@ -30,13 +30,12 @@ class ExchangeHealth(BaseModel):
     exchange: str
     status: str
     last_ok_at: datetime | None
-    age_sec: float | None  # скільки секунд тому біржа востаннє відповіла
-    rps: float | None  # поточна швидкість rate limiter; None — collector не працює
+    age_sec: float | None
+    rps: float | None
     limiter_state: str | None
 
 
 class HealthResponse(BaseModel):
-    # Лише стан API, БД і Redis: збій біржі чи зупинка collector не робить API непрацездатним
     status: Literal["ok", "degraded"]
     version: str
     time: datetime
@@ -77,7 +76,6 @@ async def _exchanges_health() -> list[ExchangeHealth]:
         async with asyncio.timeout(CHECK_TIMEOUT_SEC), SessionLocal() as session:
             overviews = await exchange_overview(session, available_exchanges())
     except Exception:
-        # Необов'язковий блок: /health має відповідати, навіть якщо міграції ще не застосовані
         return []
     result = []
     for overview in overviews:

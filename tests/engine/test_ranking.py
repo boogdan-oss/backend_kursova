@@ -114,7 +114,6 @@ def test_filter_treats_unknown_values_as_not_passing() -> None:
 
 
 def test_hide_illiquid_drops_volume_below_deal_size() -> None:
-    # 20 000 UAH / 41 = 487.8 USDT
     liquid = make(volume="500")
     thin = make(volume="400")
 

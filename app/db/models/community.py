@@ -15,11 +15,9 @@ class Post(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     author_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     text: Mapped[str] = mapped_column(Text)
-    # FR-42: прикріплена пара або можливість
     attached_pair_id: Mapped[int | None] = mapped_column(
         ForeignKey("currency_pairs.id", ondelete="SET NULL")
     )
-    # Без FK: opportunities — hypertable зі складеним PK (id, time)
     attached_opportunity_id: Mapped[int | None] = mapped_column(BigInteger)
     status: Mapped[ContentStatus] = mapped_column(
         str_enum(ContentStatus), default=ContentStatus.VISIBLE
@@ -27,7 +25,6 @@ class Post(TimestampMixin, Base):
     updated_at: Mapped[datetime | None] = mapped_column(onupdate=func.now())
 
 
-# Стрічка (FR-31) — хронологічно
 Index("ix_posts_status_created_at", Post.status, Post.created_at.desc())
 
 
@@ -96,4 +93,4 @@ class UserBan(TimestampMixin, Base):
     until: Mapped[datetime | None]
     reason: Mapped[str] = mapped_column(String(500))
     banned_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-    lifted_at: Mapped[datetime | None]  # достроково знято адміном
+    lifted_at: Mapped[datetime | None]

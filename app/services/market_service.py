@@ -41,7 +41,7 @@ class PairNotFound(Exception):
 class OffersView:
     offers: list[Offer]
     freshness: list[Freshness]
-    queued: bool  # collector отримав запит оновити пару
+    queued: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +54,7 @@ class SnapshotView:
 @dataclass(frozen=True, slots=True)
 class ExchangeStatusView:
     overview: ExchangeOverview
-    collector: CollectorStatus | None  # None — collector не працює
+    collector: CollectorStatus | None
 
 
 @dataclass(frozen=True, slots=True)

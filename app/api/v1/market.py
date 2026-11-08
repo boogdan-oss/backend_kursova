@@ -61,7 +61,7 @@ class HistoryItem(BaseModel):
     sell_price: Decimal | None
     spread_pct: Decimal | None
     volume: Decimal
-    samples: int  # скільки зборів потрапило в інтервал
+    samples: int
 
 
 class HistoryResponse(BaseModel):

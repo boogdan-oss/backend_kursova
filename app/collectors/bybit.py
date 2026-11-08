@@ -17,12 +17,9 @@ CONFIG_PATH = "/fiat/p2p/config/initial"
 PAYMENTS_PATH = "/fiat/otc/configuration/queryAllPaymentList"
 PAGE_SIZE = 20
 OK_CODE = 0
-# Обмеження частоти запитів Bybit повертає кодом у тілі зі статусом 200
 RATE_LIMIT_CODES = frozenset({10006, 10018})
 ACTIVE_SYMBOL = 1
-# side у запиті: "1" — оголошення продавців (користувач купує), "0" — покупців
 SIDES: dict[Side, str] = {"BUY": "1", "SELL": "0"}
-# Орієнтовний вивід дешевою мережею (TRC20 для стейблкоїнів): біржа змінює його часто
 WITHDRAWAL_FEES = {
     "USDT": Decimal(1),
     "USDC": Decimal(1),
@@ -105,7 +102,6 @@ class BybitAdapter(ExchangeAdapter):
 
     @classmethod
     def fees(cls) -> FeeSchedule:
-        # Тейкер на P2P комісії не платить
         return FeeSchedule(exchange=cls.name, withdrawal_fees=WITHDRAWAL_FEES)
 
     def _is_blocked(self, response: httpx.Response) -> bool:
@@ -139,7 +135,6 @@ class BybitAdapter(ExchangeAdapter):
         return json.loads(result["currencyPaymentIdMap"])
 
     def _payment_key(self, payment_id: str) -> str:
-        # Невідомий id не відкидається: зберігається сирий ідентифікатор біржі
         return self._payment_keys.get(payment_id, f"{self.name}{payment_id}")
 
     def _parse_item(self, item: dict[str, Any], side: Side, fetched_at: datetime) -> Offer:
@@ -153,11 +148,9 @@ class BybitAdapter(ExchangeAdapter):
             fiat=str(item["currencyId"]).upper(),
             price=price,
             min_amount=Decimal(item["minAmount"]),
-            # Заявлений ліміт буває більшим за те, що лишилось в оголошенні
             max_amount=min(Decimal(item["maxAmount"]), available * price),
             available=available,
             payment_methods=list(payments),
-            # userId приходить замаскованим нулем, стабільний id — userMaskId
             merchant=Merchant(
                 id=str(item["userMaskId"]),
                 nickname=str(item.get("nickName", "")),

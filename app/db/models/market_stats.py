@@ -21,12 +21,11 @@ class MarketStats(Base):
     time: Mapped[datetime] = mapped_column(primary_key=True)
     exchange_id: Mapped[int] = mapped_column(ForeignKey("exchanges.id"))
     pair_id: Mapped[int] = mapped_column(ForeignKey("currency_pairs.id"))
-    # NULL — по всіх способах оплати
     payment_method_id: Mapped[int | None] = mapped_column(ForeignKey("payment_methods.id"))
-    buy_price: Mapped[Decimal | None]  # ask; NULL — немає оголошень на стороні
-    sell_price: Mapped[Decimal | None]  # bid
-    spread: Mapped[Decimal | None] = mapped_column(Percent)  # (1.1), %
-    volume: Mapped[Decimal]  # сумарно доступно в активі
+    buy_price: Mapped[Decimal | None]
+    sell_price: Mapped[Decimal | None]
+    spread: Mapped[Decimal | None] = mapped_column(Percent)
+    volume: Mapped[Decimal]
     offers_count_buy: Mapped[int] = mapped_column(default=0)
     offers_count_sell: Mapped[int] = mapped_column(default=0)
 
@@ -52,8 +51,8 @@ class SpreadHistory(Base):
     sell_exchange_id: Mapped[int] = mapped_column(ForeignKey("exchanges.id"))
     buy_price: Mapped[Decimal]
     sell_price: Mapped[Decimal]
-    spread: Mapped[Decimal] = mapped_column(Percent)  # (1.1), до комісій
-    net_spread: Mapped[Decimal] = mapped_column(Percent)  # (1.3), після комісій
+    spread: Mapped[Decimal] = mapped_column(Percent)
+    net_spread: Mapped[Decimal] = mapped_column(Percent)
 
 
 Index("ix_spread_history_pair_time", SpreadHistory.pair_id, SpreadHistory.time.desc())

@@ -16,11 +16,8 @@ CONFIG_PATH = "/bapi/c2c/v2/friendly/c2c/portal/config"
 PAGE_SIZE = 20
 OK_CODE = "000000"
 P2P_AREA = "P2P"
-# fiat-list їх не віддає, хоча оголошення є; portal/config для непідтримуваних повертає порожньо
 EXTRA_FIATS = ("CZK", "ETB", "EUR", "GHS", "HUF", "MMK", "NOK", "PLN", "RON")
 
-# Орієнтовний вивід дешевою мережею (TRC20 для стейблкоїнів): біржа змінює його часто.
-# Актив без запису в міжбіржовий арбітраж не потрапляє
 WITHDRAWAL_FEES = {
     "USDT": Decimal("1.5"),
     "USDC": Decimal("1.5"),
@@ -44,13 +41,11 @@ class BinanceAdapter(ExchangeAdapter):
         for fiat in codes:
             try:
                 config = await self._post(CONFIG_PATH, {"fiat": fiat})
-                # Серед активів трапляється фіат (ARS/ARS, MXN/CLP) — це не крипто-пари
                 parsed = self._parse_config(config, fiat)
                 markets.extend(market for market in parsed if market.asset not in codes)
             except ExchangeBlocked:
                 raise
             except ExchangeError as exc:
-                # Збій одного фіату не скасовує весь довідник: він оновиться наступного разу
                 log.warning("binance.market_config_failed", fiat=fiat, error=exc.detail)
         return markets
 
@@ -62,7 +57,6 @@ class BinanceAdapter(ExchangeAdapter):
         payment: str | None = None,
         page: int = 1,
     ) -> list[Offer]:
-        # tradeType у Binance — з погляду користувача, як і наш side
         payload = {
             "asset": asset,
             "fiat": fiat,
@@ -85,11 +79,9 @@ class BinanceAdapter(ExchangeAdapter):
 
     @classmethod
     def fees(cls) -> FeeSchedule:
-        # Для звичайних користувачів P2P на Binance без комісії
         return FeeSchedule(exchange=cls.name, withdrawal_fees=WITHDRAWAL_FEES)
 
     def _is_blocked(self, response: httpx.Response) -> bool:
-        # Капча WAF приходить як HTML і зі статусом 2xx
         is_html = "text/html" in response.headers.get("content-type", "")
         return super()._is_blocked(response) or is_html
 
@@ -132,7 +124,6 @@ class BinanceAdapter(ExchangeAdapter):
             fiat=str(adv["fiatUnit"]).upper(),
             price=Decimal(adv["price"]),
             min_amount=Decimal(adv["minSingleTransAmount"]),
-            # dynamicMax враховує залишок оголошення, maxSingle — лише заявлений ліміт
             max_amount=Decimal(
                 adv.get("dynamicMaxSingleTransAmount") or adv["maxSingleTransAmount"]
             ),
