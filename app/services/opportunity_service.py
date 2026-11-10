@@ -27,6 +27,7 @@ from app.domain import (
     MarketSnapshot,
     Offer,
     Opportunity,
+    OpportunityEvent,
     OpportunityKind,
     Side,
     Step,
@@ -53,6 +54,7 @@ from app.engine.pricing import (
 from app.engine.ranking import OpportunityFilter, filter_opportunities
 from app.engine.scoring import potential_loss, risk_reward
 from app.engine.spreads import PERCENT_PRECISION, round_money
+from app.pubsub import get_redis, publish_event
 from app.services.collect_service import MarketStatsTracker
 from app.services.market_service import PairNotFound
 
@@ -310,7 +312,7 @@ class OpportunityScanner:
     """Фоновий пошук можливостей у collector: історія спреду й тривалість можливостей.
 
     Можливість пишеться в БД один раз, коли з'явилась; далі оновлюється лише її тривалість
-    (FR-19, FR-20).
+    (FR-19, FR-20). Нова можливість після коміту йде подією в market:updates.
     """
 
     def __init__(
@@ -350,8 +352,12 @@ class OpportunityScanner:
             await save_spread_history(
                 session, self._spread_rows(evaluated, pair_ids, exchange_ids, now)
             )
-            await self._sync_opportunities(session, found, pair_ids, exchange_ids, now)
-        log.info("collector.opportunities", found=len(found), open=len(self._open))
+            opened = await self._sync_opportunities(session, found, pair_ids, exchange_ids, now)
+        for item in opened:
+            await publish_event(get_redis(), OpportunityEvent(ts=datetime.now(UTC), data=item))
+        log.info(
+            "collector.opportunities", found=len(found), opened=len(opened), open=len(self._open)
+        )
 
     @staticmethod
     def _spread_rows(
@@ -390,13 +396,15 @@ class OpportunityScanner:
         pair_ids: dict[PairKey, int],
         exchange_ids: dict[str, int],
         now: datetime,
-    ) -> None:
+    ) -> list[Opportunity]:
+        """Повертає можливості, що з'явились у цьому проході."""
         current: dict[OpportunityKey, Opportunity] = {}
         for item in found:
             key = (item.kind, item.asset, item.fiat, item.buy_exchange, item.sell_exchange)
             if key not in current or item.net_spread_pct > current[key].net_spread_pct:
                 current[key] = item
 
+        opened: list[Opportunity] = []
         for key, item in current.items():
             if key in self._open:
                 row_id, started_at = self._open[key]
@@ -405,4 +413,6 @@ class OpportunityScanner:
             elif (item.asset, item.fiat) in pair_ids:
                 values = _opportunity_values(item, exchange_ids, pair_ids[item.asset, item.fiat])
                 self._open[key] = await save_opportunity(session, values)
+                opened.append(item)
         self._open = {key: value for key, value in self._open.items() if key in current}
+        return opened

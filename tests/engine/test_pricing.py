@@ -5,6 +5,7 @@ import pytest
 from app.engine.pricing import (
     average_price,
     effective_price,
+    exchange_snapshots,
     fill_order,
     market_snapshot,
     quantity_for,
@@ -188,6 +189,30 @@ def test_snapshot_of_empty_market() -> None:
     assert snapshot.buy_price is None
     assert snapshot.volume == 0
     assert snapshot.payment_method == "monobank"
+
+
+def test_exchange_snapshots_start_with_all_payments_then_each_one() -> None:
+    mono = make_offer("41.20")
+    privat = make_offer("41.30", merchant_id="m2", payments=("privatbank",))
+    both = make_offer("42.00", "SELL", payments=("monobank", "privatbank"))
+
+    overall, monobank, privatbank = exchange_snapshots(
+        "binance", "USDT", "UAH", [mono, privat], [both], FETCHED_AT
+    )
+
+    assert overall.payment_method is None
+    assert overall.offers_count_buy == 2
+    assert monobank.payment_method == "monobank"
+    assert monobank.buy_price == Decimal("41.20")
+    assert monobank.offers_count_sell == 1
+    assert privatbank.payment_method == "privatbank"
+    assert privatbank.buy_price == Decimal("41.30")
+
+
+def test_exchange_snapshots_of_empty_market_has_only_overall() -> None:
+    snapshots = exchange_snapshots("binance", "USDT", "UAH", [], [], FETCHED_AT)
+
+    assert [snapshot.payment_method for snapshot in snapshots] == [None]
 
 
 def test_average_price_rejects_empty_levels() -> None:

@@ -51,7 +51,9 @@ from app.db.repositories.market import (
 )
 from app.db.repositories.offers import latest_offers, save_offers, upsert_merchants
 from app.db.session import get_session
+from app.domain import MarketSnapshot, SnapshotEvent
 from app.main import app
+from app.pubsub import MARKET_UPDATES
 from app.services import market_service
 from app.services.collect_service import MarketStatsTracker, collect_task, refresh_markets
 from tests.factories import FakeRedis, make_offer
@@ -103,9 +105,7 @@ async def api(
     async def no_redis(*_: Any) -> bool:
         return False
 
-    redis = FakeRedis()
     monkeypatch.setattr(market_service, "request_pair", no_redis)
-    monkeypatch.setattr(market_service, "get_redis", lambda: redis)
     app.dependency_overrides[get_session] = test_session
     yield
     app.dependency_overrides.clear()
@@ -437,3 +437,27 @@ async def test_api_serves_collected_data_end_to_end(
     assert markets.json()["count"] == 1
     assert history.json()["count"] == 1
     assert respx.calls.call_count == requests_to_exchange
+
+
+@respx.mock
+async def test_collected_snapshot_is_published_like_api_snapshot(
+    adapter: BinanceAdapter,
+    session_factory: async_sessionmaker[AsyncSession],
+    api: None,
+    client: httpx.AsyncClient,
+    redis: FakeRedis,
+) -> None:
+    respx.post(SEARCH_URL).mock(side_effect=search_responses)
+    tracker = MarketStatsTracker()
+
+    await collect_task(adapter, BUY, tracker, session_factory)
+    assert redis.published == []
+    await collect_task(adapter, SELL, tracker, session_factory)
+
+    [(channel, raw)] = redis.published
+    event = SnapshotEvent.model_validate_json(raw)
+    response = await client.get("/api/v1/market/snapshot", params={"asset": "USDT", "fiat": "UAH"})
+    api_items = [MarketSnapshot.model_validate(item) for item in response.json()["items"]]
+    assert channel == MARKET_UPDATES
+    assert (event.data.exchange, event.data.asset, event.data.fiat) == ("binance", "USDT", "UAH")
+    assert event.data.items == api_items

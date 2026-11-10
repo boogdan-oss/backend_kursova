@@ -21,7 +21,7 @@ from app.db.repositories.market import (
 from app.db.repositories.offers import latest_offers
 from app.domain import CollectorStatus, Freshness, MarketSnapshot, Offer, Side
 from app.engine.filters import filter_by_amount, filter_by_payment
-from app.engine.pricing import market_snapshot
+from app.engine.pricing import exchange_snapshots
 from app.pubsub import get_redis
 from app.services.collector_state import read_status, request_pair
 from app.services.market_cache import read_snapshot, snapshot_key, write_snapshot
@@ -172,20 +172,7 @@ async def _build_snapshot(
         sell = await latest_offers(session, market, "SELL")
         if amount is not None:
             buy, sell = filter_by_amount(buy, amount), filter_by_amount(sell, amount)
-        fetched_at = max(times)
-        items.append(market_snapshot(market.exchange, asset, fiat, buy, sell, fetched_at))
-        for payment in sorted({key for offer in [*buy, *sell] for key in offer.payment_methods}):
-            items.append(
-                market_snapshot(
-                    market.exchange,
-                    asset,
-                    fiat,
-                    filter_by_payment(buy, payment),
-                    filter_by_payment(sell, payment),
-                    fetched_at,
-                    payment_method=payment,
-                )
-            )
+        items.extend(exchange_snapshots(market.exchange, asset, fiat, buy, sell, max(times)))
     return items
 
 

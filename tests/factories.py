@@ -1,3 +1,5 @@
+import asyncio
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -41,11 +43,35 @@ def make_offer(
     )
 
 
+class FakePubSub:
+    def __init__(self, redis: "FakeRedis") -> None:
+        self._redis = redis
+        self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+    async def __aenter__(self) -> "FakePubSub":
+        return self
+
+    async def __aexit__(self, *_: Any) -> None:
+        for queues in self._redis.channels.values():
+            if self._queue in queues:
+                queues.remove(self._queue)
+
+    async def subscribe(self, channel: str) -> None:
+        self._redis.channels.setdefault(channel, []).append(self._queue)
+        self._queue.put_nowait({"type": "subscribe", "channel": channel, "data": 1})
+
+    async def listen(self) -> AsyncIterator[dict[str, Any]]:
+        while True:
+            yield await self._queue.get()
+
+
 class FakeRedis:
     def __init__(self) -> None:
         self.values: dict[str, str] = {}
         self.expires: dict[str, int] = {}
         self.sorted_set: dict[str, float] = {}
+        self.published: list[tuple[str, str]] = []
+        self.channels: dict[str, list[asyncio.Queue[dict[str, Any]]]] = {}
 
     async def set(self, key: str, value: str, ex: int) -> None:
         self.values[key] = value
@@ -63,6 +89,23 @@ class FakeRedis:
     async def zrange(self, _: str, __: int, ___: int) -> list[str]:
         return list(self.sorted_set)
 
+    async def publish(self, channel: str, message: str) -> int:
+        self.published.append((channel, message))
+        queues = self.channels.get(channel, [])
+        for queue in queues:
+            queue.put_nowait({"type": "message", "channel": channel, "data": message})
+        return len(queues)
+
+    def pubsub(self) -> FakePubSub:
+        return FakePubSub(self)
+
+    async def until_subscribed(self, channel: str) -> None:
+        for _ in range(100):
+            if self.channels.get(channel):
+                return
+            await asyncio.sleep(0)
+        raise AssertionError(f"ніхто не підписався на {channel}")
+
 
 class BrokenRedis:
     def __getattr__(self, _: str) -> Any:
@@ -70,3 +113,12 @@ class BrokenRedis:
             raise RedisConnectionError("redis is down")
 
         return fail
+
+    def pubsub(self) -> "BrokenRedis":
+        return self
+
+    async def __aenter__(self) -> "BrokenRedis":
+        return self
+
+    async def __aexit__(self, *_: Any) -> None:
+        return None

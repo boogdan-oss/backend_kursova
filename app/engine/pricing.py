@@ -5,7 +5,7 @@ from decimal import Decimal
 from statistics import median
 
 from app.domain import MarketSnapshot, Offer
-from app.engine.filters import filter_reliable
+from app.engine.filters import filter_by_payment, filter_reliable
 from app.engine.spreads import PERCENT_PRECISION, round_money, spread_pct
 
 TOP_OFFERS = 5
@@ -116,3 +116,30 @@ def market_snapshot(
         offers_count_sell=len(sell_offers),
         fetched_at=fetched_at,
     )
+
+
+def exchange_snapshots(
+    exchange: str,
+    asset: str,
+    fiat: str,
+    buy_offers: list[Offer],
+    sell_offers: list[Offer],
+    fetched_at: datetime,
+) -> list[MarketSnapshot]:
+    """Знімок пари на біржі: спершу по всіх способах оплати, далі — по кожному окремо."""
+    snapshots = [market_snapshot(exchange, asset, fiat, buy_offers, sell_offers, fetched_at)]
+    offers = [*buy_offers, *sell_offers]
+    payments = sorted({key for offer in offers for key in offer.payment_methods})
+    for payment in payments:
+        snapshots.append(
+            market_snapshot(
+                exchange,
+                asset,
+                fiat,
+                filter_by_payment(buy_offers, payment),
+                filter_by_payment(sell_offers, payment),
+                fetched_at,
+                payment_method=payment,
+            )
+        )
+    return snapshots

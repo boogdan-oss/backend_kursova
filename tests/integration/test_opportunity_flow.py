@@ -27,12 +27,13 @@ from app.db.models import Merchant, Opportunity, SpreadHistory
 from app.db.repositories.market import find_markets
 from app.db.repositories.offers import fresh_offers
 from app.db.session import get_session
-from app.domain import Offer
+from app.domain import Offer, OpportunityEvent
 from app.main import app
+from app.pubsub import MARKET_UPDATES
 from app.services import opportunity_service
 from app.services.collect_service import MarketStatsTracker, collect_task
 from app.services.opportunity_service import OpportunityScanner, get_opportunity_history
-from tests.factories import make_offer
+from tests.factories import FakeRedis, make_offer
 
 DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL не заданий")
@@ -237,6 +238,24 @@ async def test_opportunity_is_one_row_and_duration_grows(
         "bybit",
     )
     assert [step.action for step in record.opportunity.steps] == ["BUY", "TRANSFER", "SELL"]
+
+
+async def test_new_opportunity_is_published_once(
+    session_factory: async_sessionmaker[AsyncSession], redis: FakeRedis
+) -> None:
+    await prepare_pair(session_factory)
+    scanner = OpportunityScanner(FixedTracker(profitable_offers()), set(), session_factory)
+
+    await scanner.scan()
+    await scanner.scan()
+
+    [(channel, raw)] = redis.published
+    event = OpportunityEvent.model_validate_json(raw)
+    assert channel == MARKET_UPDATES
+    assert event.data.kind == "cross_exchange"
+    assert (event.data.asset, event.data.fiat) == ("USDT", "UAH")
+    assert (event.data.buy_exchange, event.data.sell_exchange) == ("binance", "bybit")
+    assert event.data.net_spread_pct > 0
 
 
 async def test_closed_opportunity_reopens_as_new_row(
