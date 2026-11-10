@@ -52,6 +52,7 @@ class SnapshotResponse(BaseModel):
     fiat: str
     freshness: list[Freshness]
     queued: bool
+    cached: bool
     items: list[MarketSnapshot]
 
 
@@ -122,7 +123,9 @@ async def list_markets(
         "лотів). buy_price — за скільки можна купити, sell_price — за скільки продати.\n\n"
         "Перший елемент біржі — усі способи оплати (payment_method = null), далі — кожен окремо."
         "\n\namount відкидає оголошення, у ліміти яких сума не вкладається: без нього у ціну "
-        "входять і великі лоти, недоступні для звичайної угоди."
+        "входять і великі лоти, недоступні для звичайної угоди.\n\n"
+        "cached = true — знімок із Redis: після нього collector нових оголошень не приносив, "
+        "тож ціни ті самі. Новий збір будь-якої біржі скидає кеш."
     ),
 )
 async def market_snapshot(
@@ -137,7 +140,12 @@ async def market_snapshot(
     except PairNotFound as exc:
         raise pair_not_found(exc) from exc
     return SnapshotResponse(
-        asset=asset, fiat=fiat, freshness=view.freshness, queued=view.queued, items=view.items
+        asset=asset,
+        fiat=fiat,
+        freshness=view.freshness,
+        queued=view.queued,
+        cached=view.cached,
+        items=view.items,
     )
 
 

@@ -54,7 +54,7 @@ from app.db.session import get_session
 from app.main import app
 from app.services import market_service
 from app.services.collect_service import MarketStatsTracker, collect_task, refresh_markets
-from tests.factories import make_offer
+from tests.factories import FakeRedis, make_offer
 
 DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL не заданий")
@@ -103,7 +103,9 @@ async def api(
     async def no_redis(*_: Any) -> bool:
         return False
 
+    redis = FakeRedis()
     monkeypatch.setattr(market_service, "request_pair", no_redis)
+    monkeypatch.setattr(market_service, "get_redis", lambda: redis)
     app.dependency_overrides[get_session] = test_session
     yield
     app.dependency_overrides.clear()

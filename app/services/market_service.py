@@ -24,6 +24,7 @@ from app.engine.filters import filter_by_amount, filter_by_payment
 from app.engine.pricing import market_snapshot
 from app.pubsub import get_redis
 from app.services.collector_state import read_status, request_pair
+from app.services.market_cache import read_snapshot, snapshot_key, write_snapshot
 
 SIDES: tuple[Side, Side] = ("BUY", "SELL")
 
@@ -49,6 +50,7 @@ class SnapshotView:
     items: list[MarketSnapshot]
     freshness: list[Freshness]
     queued: bool
+    cached: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +122,13 @@ async def get_offers(
     return OffersView(offers, freshness, await _queue_if_stale(asset, fiat, freshness))
 
 
+def data_version(markets: list[MarketRow]) -> str:
+    """Версія даних пари: змінюється з кожним збором будь-якої сторони на будь-якій біржі."""
+    return ";".join(
+        f"{market.exchange}:{market.buy_fetched_at}:{market.sell_fetched_at}" for market in markets
+    )
+
+
 async def get_snapshot(
     session: AsyncSession,
     asset: str,
@@ -127,8 +136,33 @@ async def get_snapshot(
     exchange: str | None = None,
     amount: Decimal | None = None,
 ) -> SnapshotView:
-    """Ефективні ціни по біржах: спершу загальна, далі — по кожному способу оплати."""
+    """Ефективні ціни по біржах: спершу загальна, далі — по кожному способу оплати.
+
+    Поки collector не приніс нових оголошень, знімок береться з Redis без запитів до
+    offer_snapshots і перерахунку. Свіжість рахується щоразу: вік даних росте й у кеші.
+    """
     markets = await _load_markets(session, asset, fiat, exchange)
+    redis = get_redis()
+    key = snapshot_key(asset, fiat, exchange, amount)
+    version = data_version(markets)
+    items = await read_snapshot(redis, key, version)
+    cached = items is not None
+    if items is None:
+        items = await _build_snapshot(session, markets, asset, fiat, amount)
+        await write_snapshot(redis, key, version, items)
+
+    now = datetime.now(UTC)
+    freshness = [build_freshness(market, SIDES, now) for market in markets]
+    return SnapshotView(items, freshness, await _queue_if_stale(asset, fiat, freshness), cached)
+
+
+async def _build_snapshot(
+    session: AsyncSession,
+    markets: list[MarketRow],
+    asset: str,
+    fiat: str,
+    amount: Decimal | None,
+) -> list[MarketSnapshot]:
     items: list[MarketSnapshot] = []
     for market in markets:
         times = [time for time in map(market.fetched_at, SIDES) if time is not None]
@@ -152,10 +186,7 @@ async def get_snapshot(
                     payment_method=payment,
                 )
             )
-
-    now = datetime.now(UTC)
-    freshness = [build_freshness(market, SIDES, now) for market in markets]
-    return SnapshotView(items, freshness, await _queue_if_stale(asset, fiat, freshness))
+    return items
 
 
 async def get_history(

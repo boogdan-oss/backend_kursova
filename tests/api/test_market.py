@@ -17,7 +17,7 @@ from app.db.session import get_session
 from app.domain import CollectorStatus, Offer, Side
 from app.main import app
 from app.services import market_service
-from tests.factories import make_offer
+from tests.factories import BrokenRedis, FakeRedis, make_offer
 
 NOW = datetime.now(UTC)
 MARKET = MarketRow(
@@ -52,12 +52,15 @@ class FakeServices:
         }
         self.requested: list[tuple[str, str]] = []
         self.find_calls: list[tuple[str | None, ...]] = []
+        self.offer_calls = 0
+        self.redis: Any = FakeRedis()
 
     async def find_markets(self, _: Any, *args: str | None) -> list[MarketRow]:
         self.find_calls.append(args)
         return self.markets
 
     async def latest_offers(self, _: Any, __: MarketRow, side: Side) -> list[Offer]:
+        self.offer_calls += 1
         return self.offers[side]
 
     async def request_pair(self, _: Any, asset: str, fiat: str) -> bool:
@@ -71,6 +74,7 @@ async def services(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[FakeService
     monkeypatch.setattr(market_service, "find_markets", fake.find_markets)
     monkeypatch.setattr(market_service, "latest_offers", fake.latest_offers)
     monkeypatch.setattr(market_service, "request_pair", fake.request_pair)
+    monkeypatch.setattr(market_service, "get_redis", lambda: fake.redis)
     monkeypatch.setattr("app.api.v1.market.find_markets", fake.find_markets)
     app.dependency_overrides[get_session] = lambda: None
     yield fake
@@ -238,6 +242,78 @@ async def test_snapshot_skips_exchange_without_data(
 
     assert response.json()["items"] == []
     assert response.json()["queued"] is True
+
+
+SNAPSHOT_PARAMS = {"asset": "USDT", "fiat": "UAH"}
+
+
+async def test_repeated_snapshot_comes_from_cache(
+    client: AsyncClient, services: FakeServices
+) -> None:
+    first = await client.get("/api/v1/market/snapshot", params=SNAPSHOT_PARAMS)
+    calls_after_first = services.offer_calls
+    second = await client.get("/api/v1/market/snapshot", params=SNAPSHOT_PARAMS)
+
+    assert first.json()["cached"] is False
+    assert second.json()["cached"] is True
+    assert services.offer_calls == calls_after_first
+    assert second.json()["items"] == first.json()["items"]
+
+
+async def test_new_collection_invalidates_cached_snapshot(
+    client: AsyncClient, services: FakeServices
+) -> None:
+    await client.get("/api/v1/market/snapshot", params=SNAPSHOT_PARAMS)
+    services.markets = [replace(MARKET, sell_fetched_at=NOW + timedelta(seconds=5))]
+    services.offers["SELL"] = [make_offer("42.00", "SELL"), make_offer("42.10", "SELL")]
+
+    response = await client.get("/api/v1/market/snapshot", params=SNAPSHOT_PARAMS)
+
+    assert response.json()["cached"] is False
+    assert response.json()["items"][0]["sell_price"] == "42.05"
+
+
+async def test_snapshot_cache_is_separate_for_each_amount(
+    client: AsyncClient, services: FakeServices
+) -> None:
+    await client.get("/api/v1/market/snapshot", params=SNAPSHOT_PARAMS)
+
+    with_amount = await client.get(
+        "/api/v1/market/snapshot", params={**SNAPSHOT_PARAMS, "amount": 5000}
+    )
+    same_amount = await client.get(
+        "/api/v1/market/snapshot", params={**SNAPSHOT_PARAMS, "amount": "5000.00"}
+    )
+
+    assert with_amount.json()["cached"] is False
+    assert same_amount.json()["cached"] is True
+
+
+async def test_cached_snapshot_still_reports_stale_data(
+    client: AsyncClient, services: FakeServices
+) -> None:
+    services.markets = [STALE_MARKET]
+
+    await client.get("/api/v1/market/snapshot", params=SNAPSHOT_PARAMS)
+    response = await client.get("/api/v1/market/snapshot", params=SNAPSHOT_PARAMS)
+
+    body = response.json()
+    assert body["cached"] is True
+    assert body["freshness"][0]["stale"] is True
+    assert body["freshness"][0]["age_sec"] >= 3600
+    assert body["queued"] is True
+    assert services.requested == [("USDT", "UAH"), ("USDT", "UAH")]
+
+
+async def test_snapshot_works_without_redis(client: AsyncClient, services: FakeServices) -> None:
+    services.redis = BrokenRedis()
+
+    first = await client.get("/api/v1/market/snapshot", params=SNAPSHOT_PARAMS)
+    second = await client.get("/api/v1/market/snapshot", params=SNAPSHOT_PARAMS)
+
+    assert first.status_code == second.status_code == 200
+    assert second.json()["cached"] is False
+    assert second.json()["items"][0]["buy_price"] == "41.25"
 
 
 async def test_history_returns_rounded_points(

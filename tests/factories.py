@@ -1,5 +1,8 @@
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
+
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.domain import Merchant, Offer, Side
 
@@ -36,3 +39,34 @@ def make_offer(
         ),
         fetched_at=FETCHED_AT,
     )
+
+
+class FakeRedis:
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {}
+        self.expires: dict[str, int] = {}
+        self.sorted_set: dict[str, float] = {}
+
+    async def set(self, key: str, value: str, ex: int) -> None:
+        self.values[key] = value
+        self.expires[key] = ex
+
+    async def get(self, key: str) -> str | None:
+        return self.values.get(key)
+
+    async def zadd(self, _: str, mapping: dict[str, float]) -> None:
+        self.sorted_set.update(mapping)
+
+    async def zremrangebyscore(self, _: str, __: str, deadline: float) -> None:
+        self.sorted_set = {k: v for k, v in self.sorted_set.items() if v > deadline}
+
+    async def zrange(self, _: str, __: int, ___: int) -> list[str]:
+        return list(self.sorted_set)
+
+
+class BrokenRedis:
+    def __getattr__(self, _: str) -> Any:
+        async def fail(*__: Any, **___: Any) -> None:
+            raise RedisConnectionError("redis is down")
+
+        return fail
