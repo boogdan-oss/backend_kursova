@@ -3,8 +3,8 @@ name: Deploy
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
-
 
 concurrency:
   group: deploy-oracle
@@ -20,11 +20,27 @@ defaults:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # .env у CI немає, а без адрес налаштування не завантажаться; самих БД і Redis тут немає
+    timeout-minutes: 15
+    # .env у CI немає, а без адрес налаштування не завантажаться. Ці адреси навмисно неробочі:
+    # звичайні тести не мають торкатись БД і Redis. Справжня БД — лише для інтеграційних тестів
     env:
       DATABASE_URL: postgresql+asyncpg://ci:ci@127.0.0.1:1/ci
       REDIS_URL: redis://127.0.0.1:1/0
+      CI_DATABASE_URL: postgresql+asyncpg://ci:ci@127.0.0.1:5432/ci_test
+    services:
+      db:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,11 +49,18 @@ jobs:
           cache: pip
       - run: pip install -e ".[dev]"
       - run: ruff check .
+      - run: ruff format --check .
       - run: mypy app
-      - run: pytest -q
+      - name: Міграції на чистій БД
+        run: DATABASE_URL="$CI_DATABASE_URL" alembic upgrade head
+      - name: Тести (разом з інтеграційними на справжній БД)
+        run: TEST_DATABASE_URL="$CI_DATABASE_URL" pytest -q
+      - name: Зібрати образ
+        run: docker build --target base -t cryptoparser-backend:ci .
 
   deploy:
     needs: check
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

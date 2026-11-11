@@ -55,15 +55,19 @@ from app.engine.ranking import OpportunityFilter, filter_opportunities
 from app.engine.scoring import potential_loss, risk_reward
 from app.engine.spreads import PERCENT_PRECISION, round_money
 from app.pubsub import get_redis, publish_event
+from app.services.chain_cache import CachedChains, chains_key, read_chains, write_chains
 from app.services.collect_service import MarketStatsTracker
 from app.services.market_service import PairNotFound
 
 OFFERS_MAX_AGE = timedelta(minutes=5)
 RISK_WINDOW = timedelta(hours=1)
+CHAINS_FRESH = timedelta(seconds=30)
 
 OpportunityKey = tuple[OpportunityKind, str, str, str, str]
 
 log = structlog.get_logger()
+
+_chain_refreshes: dict[str, asyncio.Task[list[Opportunity]]] = {}
 
 
 class PriceUnavailable(Exception):
@@ -147,10 +151,7 @@ async def get_opportunities(
     if criteria.kind == "chain":
         if fiat is None:
             raise ValueError("Для ланцюжків потрібен fiat: з нього цикл починається")
-        markets = await find_markets(session)
-        offers = await fresh_offers(session, markets, since)
-        found = await asyncio.to_thread(_chains_for, offers, exchange_fees(), fiat, investment, now)
-        return filter_opportunities(found, criteria)
+        return filter_opportunities(await get_chains(fiat, investment), criteria)
 
     markets = await find_markets(session, asset=asset, fiat=fiat)
     if asset is not None and fiat is not None and not markets:
@@ -159,6 +160,46 @@ async def get_opportunities(
     risks = await _load_risks(session, markets, now)
     found = find_opportunities(offers, exchange_fees(), now, investment, risks)
     return filter_opportunities(found, criteria)
+
+
+async def get_chains(fiat: str, investment: Decimal | None) -> list[Opportunity]:
+    """Ланцюжки з кешу: свіжі — одразу; старші за CHAINS_FRESH — одразу, а перерахунок у фоні.
+
+    Без кешу запит чекає перерахунку. Одночасні запити чекають той самий перерахунок.
+    """
+    key = chains_key(fiat, investment)
+    cached = await read_chains(get_redis(), key)
+    if cached is None:
+        return await asyncio.shield(_refresh_chains(key, fiat, investment))
+    if datetime.now(UTC) - cached.computed_at > CHAINS_FRESH:
+        _refresh_chains(key, fiat, investment)
+    return cached.items
+
+
+def _refresh_chains(
+    key: str, fiat: str, investment: Decimal | None
+) -> asyncio.Task[list[Opportunity]]:
+    task = _chain_refreshes.get(key)
+    if task is None or task.done() or task.get_loop() is not asyncio.get_running_loop():
+        task = asyncio.create_task(_compute_chains(key, fiat, investment))
+        task.add_done_callback(_log_refresh_failure)
+        _chain_refreshes[key] = task
+    return task
+
+
+def _log_refresh_failure(task: asyncio.Task[list[Opportunity]]) -> None:
+    if not task.cancelled() and task.exception() is not None:
+        log.error("opportunities.chain_refresh_failed", error=repr(task.exception()))
+
+
+async def _compute_chains(key: str, fiat: str, investment: Decimal | None) -> list[Opportunity]:
+    now = datetime.now(UTC)
+    async with SessionLocal() as session:
+        markets = await find_markets(session)
+        offers = await fresh_offers(session, markets, now - OFFERS_MAX_AGE)
+    found = await asyncio.to_thread(_chains_for, offers, exchange_fees(), fiat, investment, now)
+    await write_chains(get_redis(), key, CachedChains(computed_at=now, items=found))
+    return found
 
 
 async def get_opportunity_history(
@@ -346,13 +387,20 @@ class OpportunityScanner:
                 evaluate_opportunities, offers, fees, now, None, risks
             )
             found = [item for item in evaluated if is_actionable(item)]
-            for fiat in self._chain_fiats:
-                found += await asyncio.to_thread(_chains_for, offers, fees, fiat, None, now)
+            chains = {
+                fiat: await asyncio.to_thread(_chains_for, offers, fees, fiat, None, now)
+                for fiat in self._chain_fiats
+            }
+            for items in chains.values():
+                found += items
 
             await save_spread_history(
                 session, self._spread_rows(evaluated, pair_ids, exchange_ids, now)
             )
             opened = await self._sync_opportunities(session, found, pair_ids, exchange_ids, now)
+        for fiat, items in chains.items():
+            cache = CachedChains(computed_at=now, items=items)
+            await write_chains(get_redis(), chains_key(fiat, None), cache)
         for item in opened:
             await publish_event(get_redis(), OpportunityEvent(ts=datetime.now(UTC), data=item))
         log.info(

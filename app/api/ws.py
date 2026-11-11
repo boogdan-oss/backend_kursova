@@ -6,11 +6,12 @@
 "subscribed" з усіма поточними підписками або "error". Початкові дані — з REST.
 """
 
-import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, WebSocket
+import anyio
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import AfterValidator, AwareDatetime, BaseModel, Field, ValidationError
 
 from app.domain import EVENT_TYPES, EventType
@@ -107,21 +108,29 @@ async def _receive(websocket: WebSocket, client: MarketClient) -> None:
 async def _send(websocket: WebSocket, client: MarketClient) -> None:
     """Єдиний, хто пише в сокет: і події, і відповіді на команди йдуть через чергу клієнта."""
     while (message := await client.queue.get()) is not None:
-        await websocket.send_text(message)
+        try:
+            await websocket.send_text(message)
+        except WebSocketDisconnect:
+            return
+
+
+SocketPart = Callable[[WebSocket, MarketClient], Awaitable[None]]
 
 
 @router.websocket("/ws/market")
 async def market_socket(websocket: WebSocket) -> None:
     await websocket.accept()
     client = hub.connect()
-    receiver = asyncio.create_task(_receive(websocket, client))
-    sender = asyncio.create_task(_send(websocket, client))
     try:
-        await asyncio.wait({receiver, sender}, return_when=asyncio.FIRST_COMPLETED)
+        async with anyio.create_task_group() as group:
+
+            async def run_until_done(part: SocketPart) -> None:
+                await part(websocket, client)
+                group.cancel_scope.cancel()
+
+            group.start_soon(run_until_done, _receive)
+            group.start_soon(run_until_done, _send)
     finally:
         hub.disconnect(client)
-        receiver.cancel()
-        sender.cancel()
-        await asyncio.gather(receiver, sender, return_exceptions=True)
     if client.lagging:
         await websocket.close(LAGGING_CLOSE_CODE, "Клієнт не встигає отримувати оновлення")

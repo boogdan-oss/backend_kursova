@@ -31,6 +31,7 @@ from app.domain import Offer, OpportunityEvent
 from app.main import app
 from app.pubsub import MARKET_UPDATES
 from app.services import opportunity_service
+from app.services.chain_cache import chains_key, read_chains
 from app.services.collect_service import MarketStatsTracker, collect_task
 from app.services.opportunity_service import OpportunityScanner, get_opportunity_history
 from tests.factories import FakeRedis, make_offer
@@ -204,6 +205,20 @@ async def test_real_market_without_usable_offers_gives_no_opportunity(
     await OpportunityScanner(tracker, {("USDT", "UAH")}, session_factory).scan()
 
     assert await count(session_factory, Opportunity) == 0
+
+
+async def test_scanner_warms_chain_cache_for_priority_fiats(
+    session_factory: async_sessionmaker[AsyncSession], redis: FakeRedis
+) -> None:
+    await prepare_pair(session_factory)
+
+    await OpportunityScanner(
+        FixedTracker(profitable_offers()), {("USDT", "UAH")}, session_factory
+    ).scan()
+
+    cached = await read_chains(redis, chains_key("UAH", None))  # type: ignore[arg-type]
+    assert cached is not None
+    assert all(item.kind == "chain" for item in cached.items)
 
 
 async def test_opportunity_is_one_row_and_duration_grows(

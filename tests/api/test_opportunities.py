@@ -11,7 +11,7 @@ from app.db.session import get_session
 from app.domain import Offer, Side
 from app.main import app
 from app.services import opportunity_service
-from tests.factories import make_offer
+from tests.factories import FakeRedis, make_offer
 
 NOW = datetime.now(UTC)
 
@@ -65,6 +65,8 @@ async def repos(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[FakeRepositori
     monkeypatch.setattr(opportunity_service, "find_markets", fake.find_markets)
     monkeypatch.setattr(opportunity_service, "fresh_offers", fake.fresh_offers)
     monkeypatch.setattr(opportunity_service, "pair_risks", fake.pair_risks)
+    redis = FakeRedis()
+    monkeypatch.setattr(opportunity_service, "get_redis", lambda: redis)
     app.dependency_overrides[get_session] = lambda: None
     yield fake
     app.dependency_overrides.clear()
