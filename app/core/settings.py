@@ -43,7 +43,8 @@ class Settings(BaseSettings):
     collector_priority_pairs: Annotated[list[str], NoDecode] = ["USDT/UAH"]
     collector_min_refresh_sec: float = 5.0
     data_stale_after_sec: float = 60.0
-    collector_storage_gb_per_exchange: float = 5.0
+    collector_storage_gb_per_exchange: float = 2.0
+    collector_min_free_disk_gb: float = 3.0
 
     jwt_secret: str = ""
     jwt_access_ttl_min: int = 30

@@ -40,7 +40,7 @@ PROGRESS_INTERVAL_SEC = 30.0
 MARKETS_CHECK_INTERVAL_SEC = 600.0
 MARKETS_MAX_AGE = timedelta(days=1)
 OPPORTUNITIES_INTERVAL_SEC = 30.0
-STORAGE_CHECK_INTERVAL_SEC = 600.0
+STORAGE_CHECK_INTERVAL_SEC = 300.0
 STORAGE_FULL_PAUSE_SEC = 60.0
 NEVER_FETCHED = datetime.min.replace(tzinfo=UTC)
 POPULAR_MIN_OFFERS = 20
@@ -235,8 +235,14 @@ async def run() -> None:
         tracker, parse_pairs(settings.collector_priority_pairs), alerts=alerts
     )
     budget = int(settings.collector_storage_gb_per_exchange * len(names) * GIB)
-    storage = StorageGuard(budget)
-    log.info("collector.storage_budget", budget_gb=round(budget / GIB, 1), exchanges=len(names))
+    min_free = int(settings.collector_min_free_disk_gb * GIB)
+    storage = StorageGuard(budget, min_free_bytes=min_free)
+    log.info(
+        "collector.storage_budget",
+        budget_gb=round(budget / GIB, 1),
+        min_free_gb=settings.collector_min_free_disk_gb,
+        exchanges=len(names),
+    )
     collectors = [
         ExchangeCollector(get_adapter(name), settings, stop, tracker, scanner, storage)
         for name in names

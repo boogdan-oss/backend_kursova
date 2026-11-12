@@ -8,6 +8,7 @@ from app.collectors.registry import available_exchanges
 from app.core.config import get_settings
 from app.domain import CollectorStatus
 from app.services.market_service import get_collector_status
+from app.services.storage_service import GIB, disk_free_bytes
 
 router = APIRouter(tags=["collector"])
 
@@ -33,6 +34,8 @@ class StorageStatus(BaseModel):
     used_gb: float
     budget_gb: float
     per_exchange_gb: float
+    disk_free_gb: float
+    min_free_gb: float
     full: bool
 
 
@@ -52,7 +55,8 @@ class CollectorStatusResponse(BaseModel):
         "collector — поточна швидкість rate limiter і лічильники від запуску (з Redis; "
         "null — collector не працює). tables — скільки рядків уже в БД: виклич двічі, і "
         "кількість має зростати.\n\nstorage — скільки місця займають дані і бюджет: понад "
-        "нього collector видаляє найстаріші дні сирих оголошень."
+        "нього, а також коли на диску лишається менше min_free_gb, collector видаляє "
+        "найстаріші дні сирих оголошень."
     ),
 )
 async def collector_status(session: SessionDep) -> CollectorStatusResponse:
@@ -61,6 +65,8 @@ async def collector_status(session: SessionDep) -> CollectorStatusResponse:
     exchanges = len(set(settings.exchanges) & set(available_exchanges()))
     used_gb = sum(table.size_mb for table in view.tables) / 1024
     budget_gb = settings.collector_storage_gb_per_exchange * exchanges
+    disk_free_gb = disk_free_bytes() / GIB
+    min_free_gb = settings.collector_min_free_disk_gb
     return CollectorStatusResponse(
         time=datetime.now(UTC),
         exchanges=[
@@ -83,7 +89,9 @@ async def collector_status(session: SessionDep) -> CollectorStatusResponse:
             used_gb=round(used_gb, 2),
             budget_gb=budget_gb,
             per_exchange_gb=settings.collector_storage_gb_per_exchange,
-            full=used_gb > budget_gb,
+            disk_free_gb=round(disk_free_gb, 2),
+            min_free_gb=min_free_gb,
+            full=used_gb > budget_gb or disk_free_gb < min_free_gb,
         ),
         merchants=view.merchants,
     )

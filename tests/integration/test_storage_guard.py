@@ -120,3 +120,39 @@ async def test_guard_within_budget_changes_nothing(
     assert guard.full is False
     assert guard.used_bytes is not None and guard.used_bytes > 0
     assert await offer_days(session_factory) == 3
+
+
+async def test_guard_trims_when_disk_is_low_within_budget(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await write_days(session_factory, 4)
+    free = iter([1, 1, 10**12])
+
+    guard = StorageGuard(
+        budget_bytes=10**12,
+        session_factory=session_factory,
+        min_free_bytes=100,
+        disk_free=lambda: next(free, 10**12),
+    )
+    await guard.enforce()
+
+    assert await offer_days(session_factory) == 2
+    assert guard.full is False
+
+
+async def test_guard_pauses_when_disk_stays_low(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await write_days(session_factory, 3)
+
+    guard = StorageGuard(
+        budget_bytes=10**12,
+        session_factory=session_factory,
+        min_free_bytes=100,
+        disk_free=lambda: 1,
+    )
+    await guard.enforce()
+
+    assert guard.full is True
+    assert guard.free_bytes == 1
+    assert await offer_days(session_factory) == 1

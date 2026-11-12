@@ -99,6 +99,13 @@ jobs:
         run: |
           git archive --format=tar.gz HEAD | ssh -i ~/.ssh/id_deploy "$SSH_TARGET" '
             set -e
+            free_kb=$(df --output=avail -k / | tail -1)
+            if [ "$free_kb" -lt 2097152 ]; then
+              echo "На сервері менше 2 ГБ вільного місця — деплой зупинено" >&2
+              df -h / >&2
+              docker system df >&2 || true
+              exit 1
+            fi
             mkdir -p ~/cryptoparser
             cd ~/cryptoparser
             rm -rf app alembic tests
@@ -131,6 +138,8 @@ jobs:
           " </dev/null 2>/dev/null; then
               echo "API працює"
               docker image prune -f
+              docker builder prune -f --filter until=72h
+              df -h /
               exit 0
             fi
             sleep 2
