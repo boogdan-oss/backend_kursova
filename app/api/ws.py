@@ -4,6 +4,9 @@
 "types": ["snapshot", "opportunity"]}; без types — обидва типи, "*" — будь-який актив або фіат.
 Сервер → клієнт: події {"type", "ts", "data"} з market:updates, а на кожну команду —
 "subscribed" з усіма поточними підписками або "error". Початкові дані — з REST.
+
+{"action": "auth", "token": "<access-токен>"} — вхід у з'єднанні (браузер не передає
+заголовок Authorization у WebSocket); після "authenticated" сюди йдуть події alert власника.
 """
 
 from collections.abc import Awaitable, Callable
@@ -12,8 +15,12 @@ from typing import Annotated, Literal
 
 import anyio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from pydantic import AfterValidator, AwareDatetime, BaseModel, Field, ValidationError
+from pydantic import AfterValidator, AwareDatetime, BaseModel, Field, TypeAdapter, ValidationError
 
+from app.core.security import InvalidToken, decode_token
+from app.db.models import User, UserStatus
+from app.db.repositories.users import get_user
+from app.db.session import SessionLocal
 from app.domain import EVENT_TYPES, EventType
 from app.services.market_stream import MarketClient, MarketHub
 
@@ -32,10 +39,20 @@ class PairRef(BaseModel):
     fiat: PairCode
 
 
-class ClientCommand(BaseModel):
+class SubscriptionCommand(BaseModel):
     action: Literal["subscribe", "unsubscribe"]
     pairs: list[PairRef] = Field(min_length=1, max_length=MAX_SUBSCRIPTIONS)
     types: list[EventType] = Field(default=list(EVENT_TYPES), min_length=1)
+
+
+class AuthCommand(BaseModel):
+    action: Literal["auth"]
+    token: Annotated[str, Field(min_length=1, max_length=2048)]
+
+
+COMMAND: TypeAdapter[SubscriptionCommand | AuthCommand] = TypeAdapter(
+    Annotated[SubscriptionCommand | AuthCommand, Field(discriminator="action")]
+)
 
 
 class SubscriptionItem(BaseModel):
@@ -52,13 +69,22 @@ class ErrorData(BaseModel):
     detail: str
 
 
+class AuthData(BaseModel):
+    user_id: int
+    username: str
+
+
+ReplyType = Literal["subscribed", "authenticated", "error"]
+ReplyData = SubscriptionsData | AuthData | ErrorData
+
+
 class ServerReply(BaseModel):
-    type: Literal["subscribed", "error"]
+    type: ReplyType
     ts: AwareDatetime
-    data: SubscriptionsData | ErrorData
+    data: ReplyData
 
 
-def _reply(kind: Literal["subscribed", "error"], data: SubscriptionsData | ErrorData) -> str:
+def _reply(kind: ReplyType, data: ReplyData) -> str:
     return ServerReply(type=kind, ts=datetime.now(UTC), data=data).model_dump_json()
 
 
@@ -74,12 +100,29 @@ def _error(detail: str) -> str:
     return _reply("error", ErrorData(detail=detail))
 
 
-def handle_command(client: MarketClient, text: str | None) -> str:
-    """Застосовує команду клієнта до його підписок. Повертає відповідь для клієнта."""
+async def load_user(user_id: int) -> User | None:
+    async with SessionLocal() as session:
+        return await get_user(session, user_id)
+
+
+async def _authenticate(client: MarketClient, token: str) -> str:
+    try:
+        claims = decode_token(token, "access")
+    except InvalidToken:
+        return _error("Сесія закінчилась або токен недійсний")
+    user = await load_user(claims.user_id)
+    if user is None or user.status != UserStatus.ACTIVE:
+        return _error("Акаунт недоступний")
+    client.user_id = user.id
+    return _reply("authenticated", AuthData(user_id=user.id, username=user.username))
+
+
+async def handle_command(client: MarketClient, text: str | None) -> str:
+    """Застосовує команду клієнта. Повертає відповідь для клієнта."""
     if text is None:
         return _error("Очікується JSON-команда в текстовому повідомленні")
     try:
-        command = ClientCommand.model_validate_json(text)
+        command = COMMAND.validate_json(text)
     except ValidationError as exc:
         problems = "; ".join(
             f"{'.'.join(map(str, error['loc'])) or 'json'}: {error['msg']}"
@@ -87,6 +130,8 @@ def handle_command(client: MarketClient, text: str | None) -> str:
         )
         return _error(f"Невірна команда: {problems}")
 
+    if isinstance(command, AuthCommand):
+        return await _authenticate(client, command.token)
     keys = {(kind, pair.asset, pair.fiat) for pair in command.pairs for kind in command.types}
     if command.action == "unsubscribe":
         client.subscriptions -= keys
@@ -102,7 +147,7 @@ async def _receive(websocket: WebSocket, client: MarketClient) -> None:
         message = await websocket.receive()
         if message["type"] == "websocket.disconnect":
             return
-        client.push(handle_command(client, message.get("text")))
+        client.push(await handle_command(client, message.get("text")))
 
 
 async def _send(websocket: WebSocket, client: MarketClient) -> None:

@@ -1,6 +1,8 @@
+from app.domain.alerts import AlertNotification, AlertRule, NotificationChannel
 from app.domain.deal import Deal
 from app.domain.events import (
     EVENT_TYPES,
+    AlertEvent,
     EventType,
     MarketEvent,
     OpportunityEvent,
@@ -15,6 +17,9 @@ from app.domain.opportunity import Opportunity, OpportunityKind, RiskLevel, Step
 
 __all__ = [
     "EVENT_TYPES",
+    "AlertEvent",
+    "AlertNotification",
+    "AlertRule",
     "CollectorStatus",
     "Deal",
     "EventType",
@@ -23,6 +28,7 @@ __all__ = [
     "MarketEvent",
     "MarketSnapshot",
     "Merchant",
+    "NotificationChannel",
     "Offer",
     "Opportunity",
     "OpportunityEvent",

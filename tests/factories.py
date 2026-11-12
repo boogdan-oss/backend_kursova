@@ -73,7 +73,7 @@ class FakeRedis:
         self.published: list[tuple[str, str]] = []
         self.channels: dict[str, list[asyncio.Queue[dict[str, Any]]]] = {}
 
-    async def set(self, key: str, value: str, ex: int) -> None:
+    async def set(self, key: str, value: str, ex: int = 0) -> None:
         self.values[key] = value
         self.expires[key] = ex
 
@@ -88,6 +88,20 @@ class FakeRedis:
 
     async def zrange(self, _: str, __: int, ___: int) -> list[str]:
         return list(self.sorted_set)
+
+    async def incr(self, key: str) -> int:
+        value = int(self.values.get(key, "0")) + 1
+        self.values[key] = str(value)
+        return value
+
+    async def expire(self, key: str, seconds: int) -> None:
+        self.expires[key] = seconds
+
+    async def delete(self, key: str) -> None:
+        self.values.pop(key, None)
+
+    async def getdel(self, key: str) -> str | None:
+        return self.values.pop(key, None)
 
     async def publish(self, channel: str, message: str) -> int:
         self.published.append((channel, message))

@@ -1,13 +1,15 @@
 """Події ринку: collector публікує їх у Redis market:updates, API розсилає по WebSocket.
 
-Формат повідомлення — {"type", "ts", "data"}; data завжди містить asset і fiat, за ними
-API вирішує, кому з клієнтів подію надіслати.
+Формат повідомлення — {"type", "ts", "data"}. snapshot і opportunity містять asset і fiat:
+за ними API вирішує, кому з клієнтів подію надіслати. alert містить user_id і йде лише
+власнику правила.
 """
 
 from typing import Annotated, Literal, get_args
 
 from pydantic import AwareDatetime, BaseModel, Field
 
+from app.domain.alerts import AlertNotification
 from app.domain.market import MarketSnapshot
 from app.domain.opportunity import Opportunity
 
@@ -41,4 +43,12 @@ class OpportunityEvent(BaseModel):
     data: Opportunity
 
 
-MarketEvent = Annotated[SnapshotEvent | OpportunityEvent, Field(discriminator="type")]
+class AlertEvent(BaseModel):
+    """Спрацювання правила. Іде лише власнику правила, без підписки на пару."""
+
+    type: Literal["alert"] = "alert"
+    ts: AwareDatetime
+    data: AlertNotification
+
+
+MarketEvent = Annotated[SnapshotEvent | OpportunityEvent | AlertEvent, Field(discriminator="type")]

@@ -2,14 +2,16 @@ from pathlib import Path
 from typing import Annotated, Self
 from urllib.parse import quote
 
-from pydantic import field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=ENV_FILE, env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=ENV_FILE, env_file_encoding="utf-8", extra="ignore", populate_by_name=True
+    )
 
     app_name: str = "CryptoParser API"
     environment: str = "dev"
@@ -42,6 +44,20 @@ class Settings(BaseSettings):
     collector_min_refresh_sec: float = 5.0
     data_stale_after_sec: float = 60.0
     collector_storage_gb_per_exchange: float = 5.0
+
+    jwt_secret: str = ""
+    jwt_access_ttl_min: int = 30
+    jwt_refresh_ttl_days: int = 30
+    frontend_url: str = "https://kursovafrontend.vercel.app"
+
+    telegram_bot_token: str = Field(
+        default="", validation_alias=AliasChoices("TELEGRAM_BOT_TOKEN", "BOT_TOKEN")
+    )
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
 
     @field_validator("cors_origins", "exchanges", "collector_priority_pairs", mode="before")
     @classmethod

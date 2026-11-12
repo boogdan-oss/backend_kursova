@@ -28,7 +28,7 @@ from app.db.models.reference import (
     PaymentMethod,
     PaymentMethodAlias,
 )
-from app.db.models.user import User
+from app.db.models.user import RefreshToken, User
 
 __all__ = [
     "AlertRule",
@@ -53,6 +53,7 @@ __all__ = [
     "PostLike",
     "Prediction",
     "PredictionTarget",
+    "RefreshToken",
     "Report",
     "ReportStatus",
     "Repost",

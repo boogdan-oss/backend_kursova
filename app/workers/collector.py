@@ -25,10 +25,12 @@ from app.db.repositories.market import (
 from app.db.session import SessionLocal, engine
 from app.domain import CollectorStatus
 from app.pubsub import close_redis, get_redis
+from app.services.alert_service import AlertDispatcher
 from app.services.collect_service import MarketStatsTracker, collect_task, refresh_markets
 from app.services.collector_state import publish_status, wanted_pairs
 from app.services.opportunity_service import OpportunityScanner
 from app.services.storage_service import GIB, StorageGuard
+from app.services.telegram_service import TelegramClient, poll_updates
 
 IDLE_SEC = 0.1
 FAILURE_PAUSE_SEC = 5.0
@@ -224,8 +226,14 @@ async def run() -> None:
             loop.add_signal_handler(sig, stop.set)
 
     log.info("collector.startup", exchanges=names)
+    telegram = TelegramClient(settings.telegram_bot_token) if settings.telegram_bot_token else None
+    if telegram is None:
+        log.warning("collector.telegram_disabled", reason="TELEGRAM_BOT_TOKEN не заданий")
+    alerts = AlertDispatcher(telegram)
     tracker = MarketStatsTracker()
-    scanner = OpportunityScanner(tracker, parse_pairs(settings.collector_priority_pairs))
+    scanner = OpportunityScanner(
+        tracker, parse_pairs(settings.collector_priority_pairs), alerts=alerts
+    )
     budget = int(settings.collector_storage_gb_per_exchange * len(names) * GIB)
     storage = StorageGuard(budget)
     log.info("collector.storage_budget", budget_gb=round(budget / GIB, 1), exchanges=len(names))
@@ -233,17 +241,27 @@ async def run() -> None:
         ExchangeCollector(get_adapter(name), settings, stop, tracker, scanner, storage)
         for name in names
     ]
+    background = [
+        run_every(stop, OPPORTUNITIES_INTERVAL_SEC, scanner.scan),
+        run_every(stop, STORAGE_CHECK_INTERVAL_SEC, storage.enforce),
+    ]
+    background_names = ["opportunities", "storage"]
+    if telegram is not None:
+        background.append(poll_updates(stop, telegram, get_redis))
+        background_names.append("telegram")
     try:
         results = await asyncio.gather(
             *(collector.run() for collector in collectors),
-            run_every(stop, OPPORTUNITIES_INTERVAL_SEC, scanner.scan),
-            run_every(stop, STORAGE_CHECK_INTERVAL_SEC, storage.enforce),
+            *background,
             return_exceptions=True,
         )
-        for name, result in zip([*names, "opportunities", "storage"], results, strict=True):
+        for name, result in zip([*names, *background_names], results, strict=True):
             if isinstance(result, Exception):
                 log.error("collector.exchange_crashed", exchange=name, error=repr(result))
     finally:
+        await alerts.drain()
+        if telegram is not None:
+            await telegram.aclose()
         await aclose_adapters()
         await close_redis()
         await engine.dispose()

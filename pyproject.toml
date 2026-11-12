@@ -20,6 +20,10 @@ dependencies = [
     "tenacity>=9.0",
     "structlog>=24.4",
     "networkx>=3.4",
+    "pyjwt>=2.10",
+    "bcrypt>=4.2",
+    "email-validator>=2.2",
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

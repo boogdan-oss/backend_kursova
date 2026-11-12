@@ -1,6 +1,13 @@
 import pytest
 
-from app.services import collect_service, market_service, opportunity_service
+from app.api.v1 import me
+from app.services import (
+    alert_service,
+    auth_service,
+    collect_service,
+    market_service,
+    opportunity_service,
+)
 from tests.factories import FakeRedis
 
 
@@ -8,6 +15,14 @@ from tests.factories import FakeRedis
 def redis(monkeypatch: pytest.MonkeyPatch) -> FakeRedis:
     """Сервіси пишуть кеш і події у фейковий Redis, а не в справжній з іншого event loop."""
     fake = FakeRedis()
-    for module in (collect_service, market_service, opportunity_service):
+    modules = (
+        collect_service,
+        market_service,
+        opportunity_service,
+        auth_service,
+        alert_service,
+        me,
+    )
+    for module in modules:
         monkeypatch.setattr(module, "get_redis", lambda: fake)
     return fake

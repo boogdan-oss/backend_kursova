@@ -1,11 +1,16 @@
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Query, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import AfterValidator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.collectors.registry import available_exchanges
+from app.core.security import InvalidToken, decode_token
+from app.db.models import User, UserRole
+from app.db.repositories.users import get_user
 from app.db.session import get_session
+from app.services.auth_service import AccountBlocked, ensure_active
 from app.services.market_service import PairNotFound
 
 CODE_PATTERN = r"^[A-Za-z0-9]{1,16}$"
@@ -46,3 +51,48 @@ def pair_not_found(exc: PairNotFound) -> HTTPException:
         status.HTTP_404_NOT_FOUND,
         f"Пари {exc.asset}/{exc.fiat} немає в довіднику бірж. Доступні пари — GET /api/v1/markets",
     )
+
+
+bearer = HTTPBearer(
+    auto_error=False,
+    description="Access-токен з /auth/login або /auth/register",
+)
+
+
+def unauthorized(detail: str = "Потрібно увійти") -> HTTPException:
+    return HTTPException(
+        status.HTTP_401_UNAUTHORIZED, detail, headers={"WWW-Authenticate": "Bearer"}
+    )
+
+
+async def current_user(
+    session: SessionDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+) -> User:
+    """Користувач з access-токена. Заблокований — 403, без токена чи з недійсним — 401."""
+    if credentials is None:
+        raise unauthorized()
+    try:
+        claims = decode_token(credentials.credentials, "access")
+    except InvalidToken:
+        raise unauthorized("Сесія закінчилась або токен недійсний") from None
+    user = await get_user(session, claims.user_id)
+    if user is None:
+        raise unauthorized("Користувача не знайдено")
+    try:
+        ensure_active(user)
+    except AccountBlocked as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from None
+    return user
+
+
+CurrentUser = Annotated[User, Depends(current_user)]
+
+
+async def require_admin(user: CurrentUser) -> User:
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Потрібні права адміністратора")
+    return user
+
+
+AdminUser = Annotated[User, Depends(require_admin)]

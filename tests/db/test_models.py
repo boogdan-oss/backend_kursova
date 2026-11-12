@@ -6,6 +6,7 @@ from app.db.base import Base
 
 EXPECTED_TABLES = {
     "users",
+    "refresh_tokens",
     "exchanges",
     "exchange_markets",
     "assets",

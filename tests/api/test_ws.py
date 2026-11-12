@@ -11,6 +11,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.api import ws as ws_module
 from app.api.ws import LAGGING_CLOSE_CODE, MAX_SUBSCRIPTIONS
+from app.core.security import create_access_token
 from app.domain import MarketSnapshot, SnapshotEvent, SnapshotUpdate
 from app.main import app
 from app.pubsub import MARKET_UPDATES
@@ -217,3 +218,88 @@ def test_closed_connection_leaves_hub(api: TestClient) -> None:
 
 async def _tick() -> None:
     return None
+
+
+class WsUser:
+    def __init__(self, user_id: int, status: str = "active") -> None:
+        self.id = user_id
+        self.username = f"user{user_id}"
+        self.status = status
+
+
+@pytest.fixture
+def ws_users(monkeypatch: pytest.MonkeyPatch) -> dict[int, WsUser]:
+    users = {1: WsUser(1), 2: WsUser(2), 3: WsUser(3, "banned")}
+
+    async def load_user(user_id: int) -> WsUser | None:
+        return users.get(user_id)
+
+    monkeypatch.setattr(ws_module, "load_user", load_user)
+    return users
+
+
+def alert_event(user_id: int, text: str = "Спред досяг 2 %") -> str:
+    data = {
+        "id": 10,
+        "user_id": user_id,
+        "rule_id": 4,
+        "rule_title": "Спред",
+        "text": text,
+        "channels": ["in_app"],
+        "opportunity": None,
+        "created_at": "2026-11-12T12:00:00Z",
+    }
+    return json.dumps({"type": "alert", "ts": "2026-11-12T12:00:00Z", "data": data})
+
+
+def authenticate(socket: WebSocketTestSession, user_id: int) -> Any:
+    token, _ = create_access_token(user_id)
+    socket.send_json({"action": "auth", "token": token})
+    return socket.receive_json()
+
+
+def test_auth_confirms_user(api: TestClient, ws_users: dict[int, WsUser]) -> None:
+    with api.websocket_connect(URL) as socket:
+        reply = authenticate(socket, 1)
+
+    assert reply["type"] == "authenticated"
+    assert reply["data"] == {"user_id": 1, "username": "user1"}
+
+
+@pytest.mark.parametrize(
+    ("token", "detail"),
+    [("not-a-jwt", "токен недійсний"), (None, "Акаунт недоступний")],
+)
+def test_bad_auth_is_an_error(
+    api: TestClient, ws_users: dict[int, WsUser], token: str | None, detail: str
+) -> None:
+    banned, _ = create_access_token(3)
+    with api.websocket_connect(URL) as socket:
+        socket.send_json({"action": "auth", "token": token or banned})
+        reply = socket.receive_json()
+
+    assert reply["type"] == "error"
+    assert detail in reply["data"]["detail"]
+
+
+def test_alert_reaches_only_its_owner(
+    api: TestClient, redis: FakeRedis, ws_users: dict[int, WsUser]
+) -> None:
+    with api.websocket_connect(URL) as owner, api.websocket_connect(URL) as other:
+        authenticate(owner, 1)
+        authenticate(other, 2)
+        subscribe(other, ("USDT", "UAH"))
+        publish(api, redis, alert_event(1, "для першого"))
+        publish(api, redis, snapshot_event())
+
+        assert owner.receive_json()["data"]["text"] == "для першого"
+        assert other.receive_json()["type"] == "snapshot"
+
+
+def test_anonymous_client_gets_no_alerts(api: TestClient, redis: FakeRedis) -> None:
+    with api.websocket_connect(URL) as socket:
+        subscribe(socket, ("*", "*"))
+        publish(api, redis, alert_event(1))
+        publish(api, redis, snapshot_event())
+
+        assert socket.receive_json()["type"] == "snapshot"

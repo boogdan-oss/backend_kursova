@@ -11,7 +11,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from app.core.config import get_settings
-from app.domain import OpportunityEvent, SnapshotEvent
+from app.domain import AlertEvent, OpportunityEvent, SnapshotEvent
 
 REDIS_TIMEOUT_SEC = 2.0
 MARKET_UPDATES = "market:updates"
@@ -35,7 +35,7 @@ async def close_redis() -> None:
         get_redis.cache_clear()
 
 
-async def publish_event(redis: Redis, event: SnapshotEvent | OpportunityEvent) -> None:
+async def publish_event(redis: Redis, event: SnapshotEvent | OpportunityEvent | AlertEvent) -> None:
     try:
         await redis.publish(MARKET_UPDATES, event.model_dump_json())
     except (RedisError, OSError) as exc:

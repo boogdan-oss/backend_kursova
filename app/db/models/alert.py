@@ -2,19 +2,21 @@
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
     ForeignKey,
     SmallInteger,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, Percent, TimestampMixin, str_enum
+from app.db.base import Base, Percent, TimestampMixin
 from app.db.models.enums import NotificationChannel
 
 
@@ -27,9 +29,8 @@ class AlertRule(TimestampMixin, Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     pair_id: Mapped[int] = mapped_column(ForeignKey("currency_pairs.id", ondelete="CASCADE"))
     exchange_id: Mapped[int | None] = mapped_column(ForeignKey("exchanges.id", ondelete="CASCADE"))
-    payment_method_id: Mapped[int | None] = mapped_column(
-        ForeignKey("payment_methods.id", ondelete="CASCADE")
-    )
+    payment: Mapped[str | None] = mapped_column(String(64))
+    title: Mapped[str | None] = mapped_column(String(100))
     min_spread: Mapped[Decimal | None] = mapped_column(Percent)
     min_net_spread: Mapped[Decimal | None] = mapped_column(Percent)
     min_ai_score: Mapped[int | None] = mapped_column(SmallInteger)
@@ -42,6 +43,8 @@ class AlertRule(TimestampMixin, Base):
 
 
 class Notification(Base):
+    """Спрацювання правила: один рядок на подію, у delivery — результат кожного каналу."""
+
     __tablename__ = "notifications"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -50,7 +53,10 @@ class Notification(Base):
         ForeignKey("alert_rules.id", ondelete="SET NULL")
     )
     opportunity_id: Mapped[int | None] = mapped_column(BigInteger)
-    channel: Mapped[NotificationChannel] = mapped_column(str_enum(NotificationChannel))
+    channels: Mapped[list[str]] = mapped_column(ARRAY(String(16)))
+    delivery: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict, server_default="{}")
+    text: Mapped[str] = mapped_column(Text)
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
     sent_at: Mapped[datetime] = mapped_column(server_default=func.now())
     read: Mapped[bool] = mapped_column(default=False)
 

@@ -55,6 +55,7 @@ from app.engine.ranking import OpportunityFilter, filter_opportunities
 from app.engine.scoring import potential_loss, risk_reward
 from app.engine.spreads import PERCENT_PRECISION, round_money
 from app.pubsub import get_redis, publish_event
+from app.services.alert_service import AlertDispatcher
 from app.services.chain_cache import CachedChains, chains_key, read_chains, write_chains
 from app.services.collect_service import MarketStatsTracker
 from app.services.market_service import PairNotFound
@@ -353,7 +354,8 @@ class OpportunityScanner:
     """Фоновий пошук можливостей у collector: історія спреду й тривалість можливостей.
 
     Можливість пишеться в БД один раз, коли з'явилась; далі оновлюється лише її тривалість
-    (FR-19, FR-20). Нова можливість після коміту йде подією в market:updates.
+    (FR-19, FR-20). Нова можливість після коміту йде подією в market:updates і на звірку
+    з правилами сповіщень.
     """
 
     def __init__(
@@ -361,8 +363,10 @@ class OpportunityScanner:
         tracker: MarketStatsTracker,
         priority_pairs: set[PairKey],
         session_factory: async_sessionmaker[AsyncSession] = SessionLocal,
+        alerts: AlertDispatcher | None = None,
     ) -> None:
         self._tracker = tracker
+        self._alerts = alerts
         self._chain_fiats = {fiat for _, fiat in priority_pairs}
         self._session_factory = session_factory
         self._open: dict[OpportunityKey, tuple[int, datetime]] = {}
@@ -401,8 +405,13 @@ class OpportunityScanner:
         for fiat, items in chains.items():
             cache = CachedChains(computed_at=now, items=items)
             await write_chains(get_redis(), chains_key(fiat, None), cache)
-        for item in opened:
+        for item, _ in opened:
             await publish_event(get_redis(), OpportunityEvent(ts=datetime.now(UTC), data=item))
+        if self._alerts is not None and opened:
+            try:
+                await self._alerts.dispatch(opened)
+            except Exception as exc:
+                log.error("collector.alerts_failed", error=repr(exc))
         log.info(
             "collector.opportunities", found=len(found), opened=len(opened), open=len(self._open)
         )
@@ -444,15 +453,15 @@ class OpportunityScanner:
         pair_ids: dict[PairKey, int],
         exchange_ids: dict[str, int],
         now: datetime,
-    ) -> list[Opportunity]:
-        """Повертає можливості, що з'явились у цьому проході."""
+    ) -> list[tuple[Opportunity, int]]:
+        """Повертає можливості, що з'явились у цьому проході, з id їхніх рядків."""
         current: dict[OpportunityKey, Opportunity] = {}
         for item in found:
             key = (item.kind, item.asset, item.fiat, item.buy_exchange, item.sell_exchange)
             if key not in current or item.net_spread_pct > current[key].net_spread_pct:
                 current[key] = item
 
-        opened: list[Opportunity] = []
+        opened: list[tuple[Opportunity, int]] = []
         for key, item in current.items():
             if key in self._open:
                 row_id, started_at = self._open[key]
@@ -461,6 +470,6 @@ class OpportunityScanner:
             elif (item.asset, item.fiat) in pair_ids:
                 values = _opportunity_values(item, exchange_ids, pair_ids[item.asset, item.fiat])
                 self._open[key] = await save_opportunity(session, values)
-                opened.append(item)
+                opened.append((item, self._open[key][0]))
         self._open = {key: value for key, value in self._open.items() if key in current}
         return opened
