@@ -1,14 +1,16 @@
-"""Інструменти асистента: вхідні моделі й описи для Claude.
+"""Інструменти асистента: вхідні моделі й описи для Claude і Gemini.
 
-Схема input_schema будується з тієї ж Pydantic-моделі, якою перевіряється вхід,
+Схема параметрів будується з тієї ж Pydantic-моделі, якою перевіряється вхід,
 тож опис для моделі й перевірка не розходяться. Виконання — у services/ai_service.py.
 """
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal, cast
 
 from anthropic.types.beta import BetaToolParam
+from google.genai import types
 from pydantic import BaseModel, ConfigDict, Field
 
 Code = Annotated[str, Field(pattern=r"^[A-Za-z0-9]{1,16}$")]
@@ -87,6 +89,16 @@ class HistoryInput(ToolInput):
     hours: int = Field(default=24, ge=1, le=168, description="За скільки останніх годин")
 
 
+class FiatRatesInput(ToolInput):
+    currencies: list[Code] | None = Field(
+        default=None,
+        max_length=20,
+        description="Коди ISO 4217: USD, EUR, PLN…; без них — основні валюти",
+    )
+    base: Code = Field(default="UAH", description="У чому виразити курс; типово гривня")
+    day: date | None = Field(default=None, description="Дата YYYY-MM-DD; без неї — сьогодні")
+
+
 @dataclass(frozen=True, slots=True)
 class ToolSpec:
     name: str
@@ -99,6 +111,13 @@ class ToolSpec:
             "description": self.description,
             "input_schema": cast(dict[str, object], self.model.model_json_schema()),
         }
+
+    def declaration(self) -> types.FunctionDeclaration:
+        return types.FunctionDeclaration(
+            name=self.name,
+            description=self.description,
+            parameters_json_schema=self.model.model_json_schema(),
+        )
 
 
 TOOLS: tuple[ToolSpec, ...] = (
@@ -138,6 +157,13 @@ TOOLS: tuple[ToolSpec, ...] = (
         "Як змінювались ефективні ціни й спред пари на біржі за останні години (до тижня).",
         HistoryInput,
     ),
+    ToolSpec(
+        "get_fiat_rates",
+        "Офіційні курси фіатних валют НБУ на дату: скільки base коштує одиниця валюти. "
+        "Для питань про курс долара, євро, злотого тощо, порівняння з P2P-курсом і "
+        "перерахунку сум між валютами. Це офіційний курс, а не курс банків чи P2P.",
+        FiatRatesInput,
+    ),
 )
 
 TOOLS_BY_NAME = {tool.name: tool for tool in TOOLS}
@@ -145,3 +171,7 @@ TOOLS_BY_NAME = {tool.name: tool for tool in TOOLS}
 
 def tool_definitions() -> list[BetaToolParam]:
     return [tool.definition() for tool in TOOLS]
+
+
+def gemini_tools() -> list[types.Tool]:
+    return [types.Tool(function_declarations=[tool.declaration() for tool in TOOLS])]

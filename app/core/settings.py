@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     telegram_bot_token: str = Field(
         default="", validation_alias=AliasChoices("TELEGRAM_BOT_TOKEN", "BOT_TOKEN")
     )
+    assistant_provider: Literal["auto", "gemini", "claude"] = "auto"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.5-flash"
+    gemini_fallback_model: str = "gemini-3.1-flash-lite"
     anthropic_api_key: str = ""
     assistant_model: str = "claude-opus-5-5"
     assistant_effort: Literal["low", "medium", "high", "xhigh", "max"] = "medium"

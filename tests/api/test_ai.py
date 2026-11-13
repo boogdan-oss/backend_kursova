@@ -4,13 +4,14 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from google.genai import errors as genai_errors
 from httpx import AsyncClient
 
 from app.ai.llm.client import AssistantDisabled
 from app.api.deps import current_user
 from app.api.v1 import ai as ai_module
 from app.main import app
-from app.services.ai_service import ChatEvent
+from app.services.ai_service import ChatEvent, ChatTurn
 from tests.factories import FakeRedis
 
 URL = "/api/v1/ai/chat"
@@ -28,7 +29,7 @@ def assistant(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
         yield ChatEvent("done", {"stop_reason": "end_turn"})
 
     monkeypatch.setattr(ai_module, "chat", fake_chat)
-    monkeypatch.setattr(ai_module, "get_claude", lambda: object())
+    monkeypatch.setattr(ai_module, "assistant_provider", lambda: "gemini")
     monkeypatch.setattr(ai_module, "get_redis", lambda: state["redis"])
     app.dependency_overrides[current_user] = lambda: SimpleNamespace(id=7)
     yield state
@@ -53,7 +54,7 @@ async def test_answer_streams_as_sse(client: AsyncClient, assistant: dict[str, A
         ("text", {"text": "Найдешевше на Bybit."}),
         ("done", {"stop_reason": "end_turn"}),
     ]
-    assert assistant["history"] == [{"role": "user", "content": "Де купити USDT за гривні?"}]
+    assert assistant["history"] == [ChatTurn("user", "Де купити USDT за гривні?")]
 
 
 async def test_login_is_required(client: AsyncClient) -> None:
@@ -84,14 +85,14 @@ async def test_disabled_without_api_key(
     client: AsyncClient, assistant: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def disabled() -> None:
-        raise AssistantDisabled("AI-асистент не налаштований: задайте ANTHROPIC_API_KEY")
+        raise AssistantDisabled("AI-асистент не налаштований: задайте GEMINI_API_KEY")
 
-    monkeypatch.setattr(ai_module, "get_claude", disabled)
+    monkeypatch.setattr(ai_module, "assistant_provider", disabled)
 
     response = await client.post(URL, json=QUESTION)
 
     assert response.status_code == 503
-    assert "ANTHROPIC_API_KEY" in response.json()["detail"]
+    assert "GEMINI_API_KEY" in response.json()["detail"]
 
 
 async def test_hourly_limit(
@@ -105,3 +106,28 @@ async def test_hourly_limit(
     statuses = [(await client.post(URL, json=QUESTION)).status_code for _ in range(3)]
 
     assert statuses == [200, 200, 429]
+
+
+@pytest.mark.parametrize(
+    ("code", "detail"),
+    [
+        (429, "Асистент перевантажений, спробуйте за хвилину"),
+        (400, "Асистент тимчасово недоступний"),
+    ],
+)
+async def test_gemini_errors_become_sse_errors(
+    client: AsyncClient,
+    assistant: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    code: int,
+    detail: str,
+) -> None:
+    async def failing_chat(history: Any) -> AsyncIterator[ChatEvent]:
+        raise genai_errors.APIError(code, {"error": {"message": "x", "status": "X"}})
+        yield ChatEvent("text", {"text": ""})
+
+    monkeypatch.setattr(ai_module, "chat", failing_chat)
+
+    response = await client.post(URL, json=QUESTION)
+
+    assert events(response.text) == [("error", {"detail": detail})]

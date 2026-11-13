@@ -14,7 +14,7 @@ from app.services.ai_service import (
     FALLBACK_BETA,
     MAX_TOOL_ROUNDS,
     ChatEvent,
-    chat,
+    chat_claude,
     echo_content,
     run_tool,
 )
@@ -80,7 +80,7 @@ class FakeClaude:
 
 async def collect(client: FakeClaude, question: str = "Де купити USDT?") -> list[ChatEvent]:
     history: Any = [{"role": "user", "content": question}]
-    return [event async for event in chat(history, client)]  # type: ignore[arg-type]
+    return [event async for event in chat_claude(history, client)]  # type: ignore[arg-type]
 
 
 async def test_plain_answer_streams_text_and_finishes() -> None:

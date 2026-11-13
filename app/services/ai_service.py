@@ -1,4 +1,4 @@
-"""AI-асистент на Claude: цикл «модель → інструменти → модель» і виконання інструментів.
+"""AI-асистент на Gemini або Claude: цикл «модель → інструменти → модель» і інструменти.
 
 Інструменти читають ті самі сервіси, що й REST API (БД і кеш Redis), тож асистент бачить
 ті самі дані, що й сторінки сайту. Цифри у відповідях — лише з результатів інструментів.
@@ -15,23 +15,29 @@ from typing import Any, Literal
 import structlog
 from anthropic import AsyncAnthropic
 from anthropic.types.beta import (
+    BetaAssistantMessageParam,
     BetaMessageParam,
     BetaToolResultBlockParam,
     BetaUserMessageParam,
 )
+from google import genai
+from google.genai import errors as gemini_errors
+from google.genai import types
 from pydantic import ValidationError
 
-from app.ai.llm.client import get_claude
+from app.ai.llm.client import Provider, assistant_provider, get_claude, get_gemini
 from app.ai.llm.prompts import SYSTEM_PROMPT
 from app.ai.llm.tools import (
     TOOLS_BY_NAME,
     BestPricesInput,
     CalculatorInput,
+    FiatRatesInput,
     HistoryInput,
     MarketsInput,
     OffersInput,
     OpportunitiesInput,
     ToolInput,
+    gemini_tools,
     tool_definitions,
 )
 from app.collectors.payment_map import normalize_payment
@@ -41,6 +47,7 @@ from app.db.session import SessionLocal
 from app.domain import Opportunity
 from app.engine.ranking import OpportunityFilter
 from app.engine.scoring import score_category
+from app.services.fiat_rates_service import RatesUnavailable, cross_rate, official_rates
 from app.services.market_service import PairNotFound, get_history, get_offers, get_snapshot
 from app.services.opportunity_service import PriceUnavailable, calculate, get_opportunities
 
@@ -48,6 +55,9 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_TOKENS = 16000
 MAX_TOOL_ROUNDS = 8
 MAX_LIST_ITEMS = 60
+MAIN_CURRENCIES = ("USD", "EUR", "GBP", "PLN", "CHF", "CZK", "CAD", "JPY", "CNY", "KZT")
+GEMINI_SWITCH_CODES = {429, 500, 503}
+BLOCKED_FINISH = {"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION"}
 
 log = structlog.get_logger()
 
@@ -58,6 +68,14 @@ EventKind = Literal["text", "tool", "done", "error"]
 class ChatEvent:
     kind: EventKind
     data: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class ChatTurn:
+    """Репліка розмови від клієнта: user або assistant, лише текст."""
+
+    role: Literal["user", "assistant"]
+    text: str
 
 
 class ToolFailed(Exception):
@@ -270,6 +288,37 @@ async def price_history(args: HistoryInput) -> dict[str, Any]:
     }
 
 
+async def fiat_rates(args: FiatRatesInput) -> dict[str, Any]:
+    base = args.base.upper()
+    codes = [code.upper() for code in (args.currencies or MAIN_CURRENCIES)]
+    rates = await official_rates(args.day)
+    if cross_rate(rates, base, base) is None:
+        raise ValueError(f"Валюти {base} немає в курсах НБУ")
+    found, missing = [], []
+    for code in codes:
+        if code == base:
+            continue
+        value = cross_rate(rates, code, base)
+        if value is None:
+            missing.append(code)
+            continue
+        found.append(
+            {
+                "currency": code,
+                "name": rates.names.get(code, "Гривня" if code == "UAH" else code),
+                "rate": _round(value, 4 if value >= 1 else 6),
+            }
+        )
+    return {
+        "source": "НБУ, офіційний курс (не курс банків і не P2P)",
+        "date": rates.day.isoformat(),
+        "base": base,
+        "meaning": f"rate — скільки {base} коштує 1 одиниця валюти",
+        "rates": found,
+        "missing": missing,
+    }
+
+
 Executor = Callable[[Any], Awaitable[dict[str, Any]]]
 
 EXECUTORS: dict[str, Executor] = {
@@ -279,6 +328,7 @@ EXECUTORS: dict[str, Executor] = {
     "calculate_deal": deal,
     "list_markets": markets,
     "get_price_history": price_history,
+    "get_fiat_rates": fiat_rates,
 }
 
 
@@ -299,7 +349,7 @@ async def run_tool(name: str, raw_input: Any) -> tuple[str, bool]:
     except PairNotFound as exc:
         detail = f"Пари {exc.asset}/{exc.fiat} немає в довіднику бірж. Доступні пари — list_markets"
         return json.dumps({"error": detail}, ensure_ascii=False), True
-    except (PriceUnavailable, ValueError) as exc:
+    except (PriceUnavailable, RatesUnavailable, ValueError) as exc:
         return json.dumps({"error": str(exc)}, ensure_ascii=False), True
     except Exception as exc:
         log.error("assistant.tool_failed", tool=name, error=repr(exc))
@@ -318,10 +368,42 @@ def echo_content(content: Sequence[Any]) -> list[Any]:
     return [block for i, block in enumerate(content) if i > boundary or block.type not in skipped]
 
 
+def claude_history(turns: Sequence[ChatTurn]) -> list[BetaMessageParam]:
+    return [
+        BetaUserMessageParam(role="user", content=turn.text)
+        if turn.role == "user"
+        else BetaAssistantMessageParam(role="assistant", content=turn.text)
+        for turn in turns
+    ]
+
+
+def gemini_history(turns: Sequence[ChatTurn]) -> list[types.Content]:
+    return [
+        types.Content(
+            role="user" if turn.role == "user" else "model", parts=[types.Part(text=turn.text)]
+        )
+        for turn in turns
+    ]
+
+
 async def chat(
+    turns: Sequence[ChatTurn], provider: Provider | None = None
+) -> AsyncIterator[ChatEvent]:
+    """Відповідь асистента провайдером з налаштувань (ASSISTANT_PROVIDER)."""
+    chosen = provider or assistant_provider()
+    stream = (
+        chat_gemini(gemini_history(turns))
+        if chosen == "gemini"
+        else chat_claude(claude_history(turns))
+    )
+    async for event in stream:
+        yield event
+
+
+async def chat_claude(
     history: Sequence[BetaMessageParam], client: AsyncAnthropic | None = None
 ) -> AsyncIterator[ChatEvent]:
-    """Відповідь асистента на розмову; history — повідомлення user/assistant з текстом.
+    """Відповідь Claude на розмову; history — повідомлення user/assistant з текстом.
 
     Події: text — шматок відповіді, tool — модель викликала інструмент, done — кінець,
     error — відповідь неможлива.
@@ -380,4 +462,109 @@ async def chat(
             for block, (output, failed) in zip(tool_uses, outputs, strict=True)
         ]
         messages.append(BetaUserMessageParam(role="user", content=results))
+    yield ChatEvent("error", {"detail": "Забагато кроків для однієї відповіді, уточніть питання"})
+
+
+def _gemini_config() -> types.GenerateContentConfig:
+    return types.GenerateContentConfig(
+        system_instruction=SYSTEM_PROMPT,
+        tools=gemini_tools(),
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        max_output_tokens=MAX_TOKENS,
+    )
+
+
+def _finish_name(reason: Any) -> str | None:
+    if reason is None:
+        return None
+    return str(getattr(reason, "value", reason))
+
+
+def _tool_response(call: types.FunctionCall, output: str, failed: bool) -> types.Part:
+    payload = json.loads(output)
+    response = payload if failed else {"output": payload}
+    return types.Part(
+        function_response=types.FunctionResponse(id=call.id, name=call.name, response=response)
+    )
+
+
+async def chat_gemini(
+    history: Sequence[types.Content], client: genai.Client | None = None
+) -> AsyncIterator[ChatEvent]:
+    """Відповідь Gemini з тими самими інструментами й подіями, що й chat_claude.
+
+    Якщо модель перевантажена (429 / 5xx) ще до першого слова відповіді,
+    запит повторюється резервною моделлю GEMINI_FALLBACK_MODEL.
+    """
+    gemini = client or get_gemini()
+    settings = get_settings()
+    models = [settings.gemini_model]
+    if settings.gemini_fallback_model and settings.gemini_fallback_model not in models:
+        models.append(settings.gemini_fallback_model)
+    contents: list[types.Content] = list(history)
+    config = _gemini_config()
+    for _ in range(MAX_TOOL_ROUNDS):
+        parts: list[types.Part] = []
+        finish: str | None = None
+        usage: types.GenerateContentResponseUsageMetadata | None = None
+        blocked = False
+        while True:
+            try:
+                stream = await gemini.aio.models.generate_content_stream(
+                    model=models[0], contents=contents, config=config
+                )
+                async for chunk in stream:
+                    if chunk.prompt_feedback and chunk.prompt_feedback.block_reason:
+                        blocked = True
+                    usage = chunk.usage_metadata or usage
+                    candidate = chunk.candidates[0] if chunk.candidates else None
+                    if candidate is None:
+                        continue
+                    finish = _finish_name(candidate.finish_reason) or finish
+                    for part in (candidate.content.parts if candidate.content else None) or []:
+                        parts.append(part)
+                        if part.text and not part.thought:
+                            yield ChatEvent("text", {"text": part.text})
+                break
+            except gemini_errors.APIError as exc:
+                if parts or exc.code not in GEMINI_SWITCH_CODES or len(models) == 1:
+                    raise
+                log.warning("assistant.gemini_fallback", model=models[0], status=exc.code)
+                models.pop(0)
+
+        if blocked or finish in BLOCKED_FINISH:
+            yield ChatEvent("error", {"detail": "Асистент не може відповісти на це питання"})
+            return
+        calls = [part.function_call for part in parts if part.function_call]
+        if not calls:
+            if finish == "MAX_TOKENS":
+                yield ChatEvent("error", {"detail": "Відповідь вийшла задовгою, уточніть питання"})
+                return
+            yield ChatEvent(
+                "done",
+                {
+                    "model": models[0],
+                    "stop_reason": (finish or "STOP").lower(),
+                    "input_tokens": (usage.prompt_token_count or 0) if usage else 0,
+                    "output_tokens": (usage.candidates_token_count or 0) if usage else 0,
+                    "cache_read_tokens": (usage.cached_content_token_count or 0) if usage else 0,
+                },
+            )
+            return
+
+        for call in calls:
+            yield ChatEvent("tool", {"name": call.name, "input": call.args or {}})
+        outputs = await asyncio.gather(
+            *(run_tool(call.name or "", call.args or {}) for call in calls)
+        )
+        contents.append(types.Content(role="model", parts=parts))
+        contents.append(
+            types.Content(
+                role="user",
+                parts=[
+                    _tool_response(call, output, failed)
+                    for call, (output, failed) in zip(calls, outputs, strict=True)
+                ],
+            )
+        )
     yield ChatEvent("error", {"detail": "Забагато кроків для однієї відповіді, уточніть питання"})
