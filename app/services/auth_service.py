@@ -6,9 +6,10 @@
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import structlog
 from redis.exceptions import RedisError
@@ -24,6 +25,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db.models import User, UserStatus
+from app.db.repositories.community import active_ban
 from app.db.repositories.users import (
     consume_refresh_token,
     create_user,
@@ -34,6 +36,7 @@ from app.db.repositories.users import (
     save_refresh_token,
     set_password,
     set_settings,
+    set_status,
     taken_fields,
 )
 from app.pubsub import get_redis
@@ -41,6 +44,7 @@ from app.pubsub import get_redis
 LOGIN_ATTEMPTS = 10
 LOGIN_WINDOW_SEC = 900
 FAIL_KEY = "auth:fail:{login}"
+KYIV = ZoneInfo("Europe/Kyiv")
 
 log = structlog.get_logger()
 
@@ -87,11 +91,28 @@ def _dummy_hash() -> str:
     return hash_password("timing-equalizer")
 
 
-def ensure_active(user: User) -> None:
+def blocked_message(until: datetime | None, reason: str | None) -> str:
+    when = (
+        "назавжди"
+        if until is None
+        else f"до {until.astimezone(KYIV).strftime('%d.%m.%Y %H:%M')} (за Києвом)"
+    )
+    return f"Обліковий запис заблоковано {when}" + (f". Причина: {reason}" if reason else "")
+
+
+async def ensure_active(session: AsyncSession, user: User) -> None:
+    """Пускає лише активних. Прострочене тимчасове блокування знімається тут же (FR-45)."""
+    if user.status == UserStatus.ACTIVE:
+        return
+    ban = await active_ban(session, user.id, datetime.now(UTC))
+    if ban is not None:
+        raise AccountBlocked(blocked_message(ban.until, ban.reason))
     if user.status == UserStatus.BANNED:
-        raise AccountBlocked("Акаунт заблоковано")
-    if user.status != UserStatus.ACTIVE:
-        raise AccountBlocked("Акаунт тимчасово призупинено")
+        raise AccountBlocked(blocked_message(None, None))
+    await set_status(session, user.id, UserStatus.ACTIVE)
+    await session.commit()
+    user.status = UserStatus.ACTIVE
+    log.info("auth.ban_expired", user_id=user.id)
 
 
 async def issue_tokens(session: AsyncSession, user: User) -> TokenPair:
@@ -153,7 +174,7 @@ async def login(session: AsyncSession, login_name: str, password: str) -> TokenP
     if user is None or not valid:
         await _record_failure(key)
         raise InvalidCredentials("Невірний логін або пароль")
-    ensure_active(user)
+    await ensure_active(session, user)
     await _reset_failures(key)
     tokens = await issue_tokens(session, user)
     await session.commit()
@@ -182,7 +203,7 @@ async def refresh(session: AsyncSession, refresh_token: str) -> TokenPair:
     user = await get_user(session, claims.user_id)
     if user is None:
         raise InvalidRefreshToken("Сесія недійсна, увійдіть знову")
-    ensure_active(user)
+    await ensure_active(session, user)
     tokens = await issue_tokens(session, user)
     await session.commit()
     return tokens

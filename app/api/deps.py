@@ -80,7 +80,7 @@ async def current_user(
     if user is None:
         raise unauthorized("Користувача не знайдено")
     try:
-        ensure_active(user)
+        await ensure_active(session, user)
     except AccountBlocked as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from None
     return user
@@ -96,3 +96,16 @@ async def require_admin(user: CurrentUser) -> User:
 
 
 AdminUser = Annotated[User, Depends(require_admin)]
+
+
+async def optional_user(
+    session: SessionDep,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+) -> User | None:
+    """Користувач, якщо прийшов токен; без токена — None. Недійсний токен — 401."""
+    if credentials is None:
+        return None
+    return await current_user(session, credentials)
+
+
+OptionalUser = Annotated[User | None, Depends(optional_user)]

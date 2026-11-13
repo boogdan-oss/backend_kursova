@@ -4,7 +4,7 @@ from typing import Any, Literal
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import RefreshToken, User
+from app.db.models import RefreshToken, User, UserStatus
 
 RefreshResult = Literal["ok", "reused", "invalid"]
 
@@ -45,6 +45,10 @@ async def set_password(session: AsyncSession, user_id: int, password_hash: str) 
     await session.execute(
         update(User).where(User.id == user_id).values(password_hash=password_hash)
     )
+
+
+async def set_status(session: AsyncSession, user_id: int, status: UserStatus) -> None:
+    await session.execute(update(User).where(User.id == user_id).values(status=status))
 
 
 async def set_settings(session: AsyncSession, user_id: int, settings: dict[str, Any]) -> None:

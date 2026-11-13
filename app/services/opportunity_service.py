@@ -86,6 +86,7 @@ class DealQuote:
 
 @dataclass(frozen=True, slots=True)
 class OpportunityRecord:
+    id: int
     opportunity: Opportunity
     duration_sec: int | None
 
@@ -215,6 +216,7 @@ async def get_opportunity_history(
     rows = await opportunity_history(session, asset, fiat, kind, since, limit)
     return [
         OpportunityRecord(
+            row.id,
             Opportunity(
                 kind=row.kind,
                 asset=asset_code,

@@ -33,6 +33,7 @@ class OpportunitiesResponse(BaseModel):
 
 
 class OpportunityHistoryItem(OpportunityItem):
+    id: int = Field(description="Ідентифікатор запису; його прикріплюють до публікації (FR-42)")
     duration_sec: int | None
 
 
@@ -176,7 +177,9 @@ async def opportunities_history(
     )
     items = [
         OpportunityHistoryItem(
-            **_item(record.opportunity).model_dump(), duration_sec=record.duration_sec
+            **_item(record.opportunity).model_dump(),
+            id=record.id,
+            duration_sec=record.duration_sec,
         )
         for record in records
     ]

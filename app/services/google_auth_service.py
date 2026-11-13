@@ -230,7 +230,7 @@ async def finish(
             raise GoogleAuthError("google_denied" if error == "access_denied" else "google_failed")
         profile = await exchange_code(code, saved["verifier"], client)
         user = await find_or_create_user(session, profile)
-        ensure_active(user)
+        await ensure_active(session, user)
     except AccountBlocked as exc:
         raise GoogleAuthError("account_blocked", str(exc), origin) from exc
     except GoogleAuthError as exc:
@@ -252,7 +252,7 @@ async def redeem(session: AsyncSession, redis: Redis, login_code: str) -> TokenP
     user = await get_user(session, int(raw))
     if user is None:
         raise GoogleAuthError("google_state", "Користувача не знайдено")
-    ensure_active(user)
+    await ensure_active(session, user)
     tokens = await issue_tokens(session, user)
     await session.commit()
     return tokens
