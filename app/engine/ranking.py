@@ -17,6 +17,7 @@ class OpportunityFilter:
     min_rr: Decimal | None = None
     min_volume: Decimal | None = None
     hide_illiquid: bool = False
+    single_fiat: bool = False
 
 
 def _rank(opportunity: Opportunity) -> Decimal:
@@ -43,6 +44,10 @@ def _matches(item: Opportunity, criteria: OpportunityFilter) -> bool:
         criteria.min_rr is None or (item.rr is not None and item.rr >= criteria.min_rr),
     )
     if not all(checks):
+        return False
+    if criteria.single_fiat and any(
+        step.fiat is not None and step.fiat != item.fiat for step in item.steps
+    ):
         return False
     if criteria.hide_illiquid and item.investment is not None:
         return item.max_volume * item.buy_price >= item.investment

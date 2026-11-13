@@ -8,13 +8,20 @@ RiskLevel = Literal["low", "medium", "high"]
 
 
 class Step(BaseModel):
-    """Один крок угоди; для ланцюжків — усі кроки по черзі."""
+    """Один крок угоди; для ланцюжків — усі кроки по черзі.
+
+    amount_in / amount_out — скільки віддаєте й отримуєте на цьому кроці для суми інвестиції:
+    BUY — фіат → asset, SELL — asset → фіат, TRANSFER — asset → asset без комісії виводу.
+    """
 
     exchange: str
     action: Literal["BUY", "SELL", "TRANSFER"]
     asset: str
+    fiat: str | None = Field(default=None, description="Валюта купівлі чи продажу; None — переказ")
     price: Decimal | None = None
     payment_method: str | None = None
+    amount_in: Decimal | None = None
+    amount_out: Decimal | None = None
 
 
 class Opportunity(BaseModel):

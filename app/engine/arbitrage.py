@@ -8,7 +8,7 @@ from itertools import product
 
 import networkx as nx
 
-from app.domain import FeeSchedule, MarketSnapshot, Offer, Opportunity, Side, Step
+from app.domain import Deal, FeeSchedule, MarketSnapshot, Offer, Opportunity, Side, Step
 from app.engine.fees import calculate_deal, trade_fee_rate
 from app.engine.filters import filter_by_amount, filter_reliable
 from app.engine.pricing import effective_price, quantity_for, typical_amount
@@ -23,6 +23,7 @@ DEFAULT_ADVERSE_MOVE_PCT = Decimal("0.5")
 MAX_CHAIN_STEPS = 4
 BANK = "bank"
 MIN_MARKET_OFFERS = 3
+AMOUNT_PRECISION = Decimal("0.00000001")
 ANOMALY_SPREAD_PCT = Decimal(5)
 
 
@@ -47,13 +48,40 @@ def _group_offers(offers: Iterable[Offer]) -> dict[PairKey, dict[str, dict[Side,
     return grouped
 
 
-def _steps(
-    asset: str, buy_exchange: str, sell_exchange: str, buy_price: Decimal, sell_price: Decimal
-) -> list[Step]:
-    steps = [Step(exchange=buy_exchange, action="BUY", asset=asset, price=buy_price)]
+def _steps(pair: PairKey, buy_exchange: str, sell_exchange: str, deal: Deal) -> list[Step]:
+    asset, fiat = pair
+    steps = [
+        Step(
+            exchange=buy_exchange,
+            action="BUY",
+            asset=asset,
+            fiat=fiat,
+            price=deal.buy_price,
+            amount_in=deal.investment,
+            amount_out=deal.quantity,
+        )
+    ]
     if buy_exchange != sell_exchange:
-        steps.append(Step(exchange=buy_exchange, action="TRANSFER", asset=asset))
-    steps.append(Step(exchange=sell_exchange, action="SELL", asset=asset, price=sell_price))
+        steps.append(
+            Step(
+                exchange=buy_exchange,
+                action="TRANSFER",
+                asset=asset,
+                amount_in=deal.quantity,
+                amount_out=deal.sell_quantity,
+            )
+        )
+    steps.append(
+        Step(
+            exchange=sell_exchange,
+            action="SELL",
+            asset=asset,
+            fiat=fiat,
+            price=deal.sell_price,
+            amount_in=deal.sell_quantity,
+            amount_out=deal.investment + deal.net_profit,
+        )
+    )
     return steps
 
 
@@ -121,7 +149,7 @@ def _evaluate(
         sell_exchange=sell_exchange,
         buy_price=buy_price,
         sell_price=sell_price,
-        steps=_steps(asset, buy_exchange, sell_exchange, buy_price, sell_price),
+        steps=_steps(pair, buy_exchange, sell_exchange, deal),
         spread_pct=deal.spread_pct,
         net_spread_pct=deal.net_spread_pct,
         estimated_profit=deal.net_profit,
@@ -225,26 +253,59 @@ def _walk(
         action = edge["action"]
         if action == "TRANSFER":
             exchange, asset = source
+            before = net
             net -= fees[exchange].withdrawal_fee(asset)
             if net <= 0:
                 return None
-            steps.append(Step(exchange=exchange, action="TRANSFER", asset=asset))
+            steps.append(
+                Step(
+                    exchange=exchange,
+                    action="TRANSFER",
+                    asset=asset,
+                    amount_in=_amount(before),
+                    amount_out=_amount(net),
+                )
+            )
             continue
 
         quote, price = edge["quote"], edge["price"]
         rate = trade_fee_rate(fees[quote.exchange])
+        before = net
         if action == "BUY":
             net, gross = net / (price * (1 + rate)), gross / price
             first_quantity = first_quantity or net
-            held = net
+            held, fiat_amount = net, before
+            available, limits = quote.buy_volume, (quote.buy_min_amount, quote.buy_max_amount)
         else:
             held = net
             net, gross = net * price * (1 - rate), gross * price
-        if held > quote.volume:
+            fiat_amount = net
+            available, limits = quote.sell_volume, (quote.sell_min_amount, quote.sell_max_amount)
+        available = quote.volume if available is None else available
+        if held > available or not _within(fiat_amount, *limits):
             return None
-        capacity = min(capacity, quote.volume * first_quantity / held)
-        steps.append(Step(exchange=quote.exchange, action=action, asset=quote.asset, price=price))
+        capacity = min(capacity, available * first_quantity / held)
+        steps.append(
+            Step(
+                exchange=quote.exchange,
+                action=action,
+                asset=quote.asset,
+                fiat=quote.fiat,
+                price=price,
+                amount_in=_amount(before),
+                amount_out=_amount(net),
+            )
+        )
     return _Walk(net, gross, steps, capacity)
+
+
+def _amount(value: Decimal) -> Decimal:
+    return value.quantize(AMOUNT_PRECISION)
+
+
+def _within(amount: Decimal, low: Decimal | None, high: Decimal | None) -> bool:
+    """Сума кроку вкладається в ліміти хоча б одного надійного оголошення."""
+    return (low is None or amount >= low) and (high is None or amount <= high)
 
 
 def find_chains(

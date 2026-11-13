@@ -118,3 +118,35 @@ def test_hide_illiquid_drops_volume_below_deal_size() -> None:
     thin = make(volume="400")
 
     assert filter_opportunities([liquid, thin], OpportunityFilter(hide_illiquid=True)) == [liquid]
+
+
+def test_single_fiat_hides_chains_through_other_currencies() -> None:
+    from app.domain import Step
+
+    plain = make().model_copy(
+        update={
+            "steps": [
+                Step(exchange="binance", action="BUY", asset="USDT", fiat="UAH"),
+                Step(exchange="bybit", action="SELL", asset="USDT", fiat="UAH"),
+            ]
+        }
+    )
+    via_eur = plain.model_copy(
+        update={
+            "kind": "chain",
+            "steps": [
+                Step(exchange="binance", action="BUY", asset="USDT", fiat="UAH"),
+                Step(exchange="binance", action="SELL", asset="USDT", fiat="EUR"),
+                Step(exchange="binance", action="BUY", asset="USDC", fiat="EUR"),
+                Step(exchange="binance", action="SELL", asset="USDC", fiat="UAH"),
+            ],
+        }
+    )
+    old_history = plain.model_copy(
+        update={"steps": [Step(exchange="binance", action="BUY", asset="USDT")]}
+    )
+
+    kept = filter_opportunities([plain, via_eur, old_history], OpportunityFilter(single_fiat=True))
+
+    assert kept == [plain, old_history]
+    assert filter_opportunities([via_eur], OpportunityFilter()) == [via_eur]

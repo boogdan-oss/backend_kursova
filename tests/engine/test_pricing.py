@@ -218,3 +218,22 @@ def test_exchange_snapshots_of_empty_market_has_only_overall() -> None:
 def test_average_price_rejects_empty_levels() -> None:
     with pytest.raises(ValueError, match="рівн"):
         average_price([])
+
+
+def test_snapshot_reports_side_volume_and_limits_of_reliable_offers() -> None:
+    buy = [
+        make_offer("41.20", min_amount="500", max_amount="20000", available="100"),
+        make_offer(
+            "41.30", merchant_id="m2", min_amount="1000", max_amount="50000", available="300"
+        ),
+        make_offer("30.00", merchant_id="newbie", orders=3, min_amount="1", max_amount="999999"),
+    ]
+    sell = [make_offer("41.90", "SELL", min_amount="2000", max_amount="9000", available="40")]
+
+    snapshot = market_snapshot("binance", "USDT", "UAH", buy, sell, FETCHED_AT)
+
+    assert (snapshot.buy_volume, snapshot.sell_volume) == (Decimal(400), Decimal(40))
+    assert (snapshot.buy_min_amount, snapshot.buy_max_amount) == (Decimal(500), Decimal(50000))
+    assert (snapshot.sell_min_amount, snapshot.sell_max_amount) == (Decimal(2000), Decimal(9000))
+    empty = market_snapshot("binance", "USDT", "UAH", [], [], FETCHED_AT)
+    assert empty.buy_volume is None and empty.buy_min_amount is None

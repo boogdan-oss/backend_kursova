@@ -29,6 +29,20 @@ class MarketSnapshot(BaseModel):
     volume: Decimal = Decimal(0)
     offers_count_buy: int = Field(default=0, ge=0)
     offers_count_sell: int = Field(default=0, ge=0)
+    buy_volume: Decimal | None = Field(
+        default=None, description="Доступно в asset на стороні купівлі (надійні продавці)"
+    )
+    sell_volume: Decimal | None = Field(
+        default=None, description="Доступно в asset на стороні продажу (надійні продавці)"
+    )
+    buy_min_amount: Decimal | None = Field(
+        default=None, description="Найменший мінімум угоди у фіаті серед надійних оголошень"
+    )
+    buy_max_amount: Decimal | None = Field(
+        default=None, description="Найбільший максимум угоди у фіаті серед надійних оголошень"
+    )
+    sell_min_amount: Decimal | None = None
+    sell_max_amount: Decimal | None = None
     fetched_at: AwareDatetime
 
 

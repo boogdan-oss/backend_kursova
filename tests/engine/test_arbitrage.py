@@ -436,3 +436,73 @@ def test_chain_ignores_side_without_price() -> None:
     missing = [*PROFITABLE_LOOP[:3], snapshot("binance", "USDC", "UAH", None, None)]
 
     assert find_chains(missing, FEES, "UAH", Decimal(20000), NOW) == []
+
+
+def test_cross_exchange_steps_show_what_you_give_and_get() -> None:
+    offers = [
+        offer("binance", "BUY", "41.00"),
+        offer("binance", "SELL", "40.50"),
+        offer("bybit", "BUY", "42.50"),
+        offer("bybit", "SELL", "41.80"),
+    ]
+
+    (found,) = find(offers, FEES, NOW, investment=Decimal(20000))
+
+    buy, transfer, sell = found.steps
+    assert (buy.fiat, buy.amount_in) == ("UAH", Decimal(20000))
+    assert buy.amount_out == transfer.amount_in
+    assert transfer.fiat is None and transfer.amount_out == sell.amount_in
+    assert transfer.amount_in - transfer.amount_out == FEES["binance"].withdrawal_fee("USDT")
+    assert sell.fiat == "UAH"
+    assert sell.amount_out - Decimal(20000) == pytest.approx(found.estimated_profit, abs=1)
+
+
+def test_chain_steps_name_every_currency_and_amount() -> None:
+    (best, *_) = find_chains(PROFITABLE_LOOP, FEES, "UAH", Decimal(20000), NOW)
+
+    assert [step.fiat for step in best.steps] == ["UAH", "EUR", "EUR", "UAH"]
+    assert best.steps[0].amount_in == Decimal(20000)
+    for current, following in zip(best.steps, best.steps[1:], strict=False):
+        assert current.amount_out == following.amount_in
+    assert best.steps[-1].amount_out - Decimal(20000) == pytest.approx(
+        best.estimated_profit, abs=Decimal("0.01")
+    )
+
+
+def limited(
+    exchange: str, asset: str, fiat: str, buy: str, sell: str, **limits: str
+) -> MarketSnapshot:
+    return snapshot(exchange, asset, fiat, buy, sell).model_copy(
+        update={key: Decimal(value) for key, value in limits.items()}
+    )
+
+
+def test_chain_step_must_fit_offer_limits() -> None:
+    too_small_for_eur_offers = [
+        *PROFITABLE_LOOP[:2],
+        limited("binance", "USDC", "EUR", "0.93", "0.90", buy_min_amount="1000"),
+        PROFITABLE_LOOP[3],
+    ]
+
+    assert find_chains(too_small_for_eur_offers, FEES, "UAH", Decimal(20000), NOW) == []
+    fits = [
+        *PROFITABLE_LOOP[:2],
+        limited(
+            "binance", "USDC", "EUR", "0.93", "0.90", buy_min_amount="10", buy_max_amount="900"
+        ),
+        PROFITABLE_LOOP[3],
+    ]
+    assert find_chains(fits, FEES, "UAH", Decimal(20000), NOW)
+
+
+def test_chain_volume_uses_the_side_it_trades() -> None:
+    loop = [
+        snapshot("binance", "USDT", "UAH", "41.00", "40.50", "5000"),
+        snapshot("binance", "USDT", "EUR", "0.97", "0.95", "5000"),
+        limited("binance", "USDC", "EUR", "0.93", "0.90", buy_volume="1000", sell_volume="1"),
+        snapshot("binance", "USDC", "UAH", "42.00", "41.50", "5000"),
+    ]
+
+    (found,) = find_chains(loop, FEES, "UAH", Decimal(20000), NOW)
+
+    assert round(found.max_volume) == 979

@@ -98,7 +98,10 @@ def _opportunity(item: Opportunity) -> dict[str, Any]:
                 "action": step.action,
                 "asset": step.asset,
                 "price": _round(step.price),
+                "fiat": step.fiat,
                 "payment": step.payment_method,
+                "gives": _round(step.amount_in, 8),
+                "gets": _round(step.amount_out, 8),
             }
             for step in item.steps
         ],

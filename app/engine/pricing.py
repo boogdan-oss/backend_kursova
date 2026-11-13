@@ -97,9 +97,14 @@ def market_snapshot(
     fetched_at: datetime,
     payment_method: str | None = None,
 ) -> MarketSnapshot:
-    """Ефективні ціни пари на біржі. Ціна — лише за надійними продавцями, обсяг — за всіма."""
-    buy_price = effective_price(filter_reliable(buy_offers))
-    sell_price = effective_price(filter_reliable(sell_offers))
+    """Ефективні ціни пари на біржі. Ціна — лише за надійними продавцями, обсяг — за всіма.
+
+    Обсяг і ліміти окремо по сторонах — за надійними: з них ланцюжки перевіряють, чи
+    вкладається сума кожного кроку в оголошення.
+    """
+    reliable_buy, reliable_sell = filter_reliable(buy_offers), filter_reliable(sell_offers)
+    buy_price = effective_price(reliable_buy)
+    sell_price = effective_price(reliable_sell)
     spread = None
     if buy_price is not None and sell_price is not None:
         spread = spread_pct(buy_price, sell_price)
@@ -114,8 +119,18 @@ def market_snapshot(
         volume=sum((offer.available for offer in [*buy_offers, *sell_offers]), Decimal(0)),
         offers_count_buy=len(buy_offers),
         offers_count_sell=len(sell_offers),
+        buy_volume=_available(reliable_buy),
+        sell_volume=_available(reliable_sell),
+        buy_min_amount=min((offer.min_amount for offer in reliable_buy), default=None),
+        buy_max_amount=max((offer.max_amount for offer in reliable_buy), default=None),
+        sell_min_amount=min((offer.min_amount for offer in reliable_sell), default=None),
+        sell_max_amount=max((offer.max_amount for offer in reliable_sell), default=None),
         fetched_at=fetched_at,
     )
+
+
+def _available(offers: list[Offer]) -> Decimal | None:
+    return sum((offer.available for offer in offers), Decimal(0)) if offers else None
 
 
 def exchange_snapshots(

@@ -114,6 +114,10 @@ async def list_opportunities(
     min_volume: PercentQuery = None,
     investment: Annotated[Decimal | None, Query(gt=0, description="Сума у фіаті")] = None,
     hide_illiquid: bool = False,
+    single_fiat: Annotated[
+        bool,
+        Query(description="Лише угоди без інших валют: ланцюжки через чужий фіат приховати"),
+    ] = False,
 ) -> OpportunitiesResponse:
     for exchange in (buy_exchange, sell_exchange):
         if exchange is not None:
@@ -128,6 +132,7 @@ async def list_opportunities(
         min_rr=min_rr,
         min_volume=min_volume,
         hide_illiquid=hide_illiquid,
+        single_fiat=single_fiat,
     )
     try:
         found = await get_opportunities(
