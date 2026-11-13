@@ -116,3 +116,22 @@ async def revoke_user_tokens(session: AsyncSession, user_id: int) -> None:
         .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
         .values(revoked_at=func.now())
     )
+
+
+async def find_user_by_google_sub(session: AsyncSession, google_sub: str) -> User | None:
+    query = select(User).where(User.google_sub == google_sub)
+    return (await session.execute(query)).scalars().first()
+
+
+async def find_user_by_email(session: AsyncSession, email: str) -> User | None:
+    query = select(User).where(User.email == email.strip().lower())
+    return (await session.execute(query)).scalars().first()
+
+
+async def set_google_sub(session: AsyncSession, user_id: int, google_sub: str) -> None:
+    await session.execute(update(User).where(User.id == user_id).values(google_sub=google_sub))
+
+
+async def username_exists(session: AsyncSession, username: str) -> bool:
+    query = select(User.id).where(func.lower(User.username) == username.lower())
+    return (await session.execute(query)).first() is not None

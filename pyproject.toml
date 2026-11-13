@@ -24,6 +24,7 @@ dependencies = [
     "bcrypt>=4.2",
     "email-validator>=2.2",
     "tzdata>=2024.1",
+    "anthropic>=2.8",
 ]
 
 [project.optional-dependencies]
@@ -35,7 +36,6 @@ ai = [
     "statsmodels>=0.14",
     "joblib>=1.4",
     "mlflow>=2.18",
-    "openai>=1.57",
 ]
 dev = [
     "pytest>=8.3",

@@ -1,12 +1,17 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, HTTPException, status
+import httpx
+from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import RedirectResponse
 from pydantic import AwareDatetime, BaseModel, EmailStr, Field
+from redis.exceptions import RedisError
 
 from app.api.deps import CODE_PATTERN, CurrentUser, SessionDep
 from app.db.models import User, UserRole, UserStatus
+from app.pubsub import get_redis
 from app.services.auth_service import (
     AccountBlocked,
     InvalidCredentials,
@@ -19,6 +24,13 @@ from app.services.auth_service import (
     logout,
     refresh,
     register,
+)
+from app.services.google_auth_service import (
+    GoogleAuthError,
+    allowed_origin,
+    finish,
+    redeem,
+    start_url,
 )
 
 router = APIRouter(tags=["auth"])
@@ -47,6 +59,7 @@ class UserOut(BaseModel):
     role: UserRole
     status: UserStatus
     telegram_connected: bool
+    google_connected: bool
     settings: UserSettings
     created_at: AwareDatetime
 
@@ -59,6 +72,7 @@ class UserOut(BaseModel):
             role=user.role,
             status=user.status,
             telegram_connected=user.telegram_chat_id is not None,
+            google_connected=user.google_sub is not None,
             settings=UserSettings.model_validate(user.settings),
             created_at=user.created_at,
         )
@@ -182,3 +196,84 @@ async def change_user_password(
         await change_password(session, user, body.current_password, body.new_password)
     except InvalidCredentials as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+
+class GoogleExchangeRequest(BaseModel):
+    code: Annotated[str, Field(min_length=1, max_length=200)]
+
+
+def _to_frontend(origin: str, path: str, **params: str) -> RedirectResponse:
+    return RedirectResponse(f"{origin}{path}?{urlencode(params)}", status.HTTP_302_FOUND)
+
+
+@router.get(
+    "/auth/google/start",
+    response_class=RedirectResponse,
+    status_code=status.HTTP_302_FOUND,
+    summary="Вхід через Google: перехід на вибір облікового запису",
+    description=(
+        "Відкривати в браузері (посилання або window.location), не через fetch. Перекидає на "
+        "Google з вибором облікового запису; після вибору браузер повертається на фронтенд "
+        "/auth/google/callback?code=...&next=..., а code обмінюється на токени через "
+        "POST /auth/google/exchange. Помилки — /login?error=google_disabled | google_denied | "
+        "google_state | google_unverified | account_blocked | google_failed.\n\n"
+        "origin — адреса фронтенду, куди повернутись (лише з CORS_ORIGINS); next — шлях на "
+        "сайті після входу."
+    ),
+)
+async def google_start(
+    origin: str | None = None,
+    next_path: Annotated[str | None, Query(alias="next")] = None,
+) -> RedirectResponse:
+    try:
+        url = await start_url(get_redis(), origin, next_path)
+    except GoogleAuthError as exc:
+        return _to_frontend(allowed_origin(origin), "/login", error=exc.code)
+    except (RedisError, OSError):
+        return _to_frontend(allowed_origin(origin), "/login", error="google_failed")
+    return RedirectResponse(url, status.HTTP_302_FOUND)
+
+
+@router.get(
+    "/auth/google/callback",
+    response_class=RedirectResponse,
+    status_code=status.HTTP_302_FOUND,
+    summary="Повернення з Google (адреса для Google Cloud Console)",
+    include_in_schema=False,
+)
+async def google_callback(
+    session: SessionDep,
+    state: str = "",
+    code: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    try:
+        async with httpx.AsyncClient() as client:
+            result = await finish(session, get_redis(), client, state, code, error)
+    except GoogleAuthError as exc:
+        return _to_frontend(exc.origin or allowed_origin(None), "/login", error=exc.code)
+    except (RedisError, OSError):
+        return _to_frontend(allowed_origin(None), "/login", error="google_failed")
+    return _to_frontend(
+        result.origin, "/auth/google/callback", code=result.login_code, next=result.next_path
+    )
+
+
+@router.post(
+    "/auth/google/exchange",
+    response_model=AuthResponse,
+    summary="Обмін одноразового коду після входу через Google на токени",
+    description="Код живе 60 секунд і спрацьовує один раз.",
+)
+async def google_exchange(body: GoogleExchangeRequest, session: SessionDep) -> AuthResponse:
+    try:
+        tokens = await redeem(session, get_redis(), body.code)
+    except GoogleAuthError as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
+    except AccountBlocked as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    except (RedisError, OSError) as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Вхід тимчасово недоступний, спробуйте пізніше"
+        ) from exc
+    return AuthResponse.of(tokens)

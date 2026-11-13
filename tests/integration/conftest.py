@@ -1,6 +1,6 @@
 import pytest
 
-from app.api.v1 import me
+from app.api.v1 import auth, me
 from app.services import (
     alert_service,
     auth_service,
@@ -22,6 +22,7 @@ def redis(monkeypatch: pytest.MonkeyPatch) -> FakeRedis:
         auth_service,
         alert_service,
         me,
+        auth,
     )
     for module in modules:
         monkeypatch.setattr(module, "get_redis", lambda: fake)

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 from urllib.parse import quote
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
@@ -50,10 +50,18 @@ class Settings(BaseSettings):
     jwt_access_ttl_min: int = 30
     jwt_refresh_ttl_days: int = 30
     frontend_url: str = "https://kursovafrontend.vercel.app"
+    public_api_url: str = "https://upars.duckdns.org"
+    google_client_id: str = ""
+    google_client_secret: str = ""
 
     telegram_bot_token: str = Field(
         default="", validation_alias=AliasChoices("TELEGRAM_BOT_TOKEN", "BOT_TOKEN")
     )
+    anthropic_api_key: str = ""
+    assistant_model: str = "claude-opus-5-5"
+    assistant_effort: Literal["low", "medium", "high", "xhigh", "max"] = "medium"
+    assistant_messages_per_hour: int = 30
+
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
