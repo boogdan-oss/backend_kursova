@@ -46,7 +46,7 @@ class ChatRequest(BaseModel):
         return messages
 
 
-async def _within_limit(user_id: int) -> bool:
+async def within_limit(user_id: int) -> bool:
     """Не більше ASSISTANT_MESSAGES_PER_HOUR запитів на годину. Без Redis — без обмеження."""
     limit = get_settings().assistant_messages_per_hour
     key = RATE_KEY.format(user_id=user_id, hour=datetime.now(UTC).strftime("%Y%m%d%H"))
@@ -99,7 +99,7 @@ async def assistant_chat(body: ChatRequest, user: CurrentUser) -> StreamingRespo
         assistant_provider()
     except AssistantDisabled as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
-    if not await _within_limit(user.id):
+    if not await within_limit(user.id):
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             "Ліміт повідомлень асистенту на цю годину вичерпано",

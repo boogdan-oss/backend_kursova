@@ -11,7 +11,7 @@ from app.core.config import get_settings
 
 Provider = Literal["gemini", "claude"]
 
-RETRY_STATUSES = [500, 502, 503, 504]
+RETRY_STATUSES = [500, 502, 504]
 
 
 class AssistantDisabled(Exception):

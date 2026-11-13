@@ -29,6 +29,8 @@ EXPECTED_TABLES = {
     "reposts",
     "reports",
     "user_bans",
+    "assistant_conversations",
+    "assistant_messages",
 }
 HYPERTABLES = {"offer_snapshots", "market_stats", "spread_history", "opportunities", "predictions"}
 

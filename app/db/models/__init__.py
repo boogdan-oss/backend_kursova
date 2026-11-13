@@ -1,6 +1,7 @@
 """Усі моделі — імпорт тут реєструє їх у Base.metadata (потрібно для Alembic)."""
 
 from app.db.models.alert import AlertRule, Notification, WatchlistItem
+from app.db.models.assistant import AssistantConversation, AssistantMessage
 from app.db.models.community import Comment, Post, PostLike, Report, Repost, UserBan
 from app.db.models.enums import (
     ContentStatus,
@@ -33,6 +34,8 @@ from app.db.models.user import RefreshToken, User
 __all__ = [
     "AlertRule",
     "Asset",
+    "AssistantConversation",
+    "AssistantMessage",
     "Comment",
     "ContentStatus",
     "CurrencyPair",

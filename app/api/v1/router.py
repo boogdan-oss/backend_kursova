@@ -4,6 +4,7 @@ from app.api.v1 import (
     admin,
     ai,
     alerts,
+    assistant,
     auth,
     collector,
     community,
@@ -26,5 +27,6 @@ api_router.include_router(me.router)
 api_router.include_router(watchlist.router)
 api_router.include_router(alerts.router)
 api_router.include_router(ai.router)
+api_router.include_router(assistant.router)
 api_router.include_router(community.router)
 api_router.include_router(admin.router)
