@@ -238,7 +238,11 @@ def _visible_with_pair(pair_id: int | None) -> list[Any]:
 async def timeline(
     session: AsyncSession, scope: TimelineScope, after: FeedRow | None, limit: int
 ) -> list[FeedRow]:
-    """Видимі публікації та репости, новіші першими (FR-31). after — останній рядок сторінки."""
+    """Видимі публікації та репости, новіші першими (FR-31). after — останній рядок сторінки.
+
+    Кожна публікація — один рядок: якщо її репостили, вона стоїть на місці останнього
+    репосту з позначкою, хто поширив, а не дублюється поруч з оригіналом.
+    """
     parts: list[Any] = []
     if scope.posts:
         posts = select(
@@ -265,7 +269,17 @@ async def timeline(
     if not parts:
         return []
     combined: Any = parts[0] if len(parts) == 1 else union_all(parts[0], parts[1])
-    merged = combined.subquery()
+    events = combined.subquery()
+    merged = (
+        select(events.c.post_id, events.c.reposter_id, events.c.at)
+        .distinct(events.c.post_id)
+        .order_by(
+            events.c.post_id,
+            events.c.at.desc(),
+            func.coalesce(events.c.reposter_id, 0).desc(),
+        )
+        .subquery()
+    )
     rank = func.coalesce(merged.c.reposter_id, 0)
     query = select(merged.c.post_id, merged.c.reposter_id, merged.c.at)
     if after is not None:
@@ -463,16 +477,30 @@ async def profile_view(session: AsyncSession, user: User) -> ProfileView:
         .where(visible)
         .scalar_subquery()
     )
-    counts = (await session.execute(select(posts, likes, reposts))).one()
+    comments = (
+        select(func.count())
+        .select_from(Comment)
+        .join(Post, Post.id == Comment.post_id)
+        .where(
+            Comment.author_id == user.id,
+            Comment.status == ContentStatus.VISIBLE,
+            Post.status == ContentStatus.VISIBLE,
+        )
+        .scalar_subquery()
+    )
+    counts = (await session.execute(select(posts, likes, reposts, comments))).one()
     return ProfileView(
         id=user.id,
         username=user.username,
+        display_name=user.display_name,
+        bio=user.bio,
         is_admin=user.role == UserRole.ADMIN,
         status=user.status,
         joined_at=user.created_at,
         posts=counts[0],
         likes_received=counts[1],
         reposts_received=counts[2],
+        comments=counts[3],
     )
 
 

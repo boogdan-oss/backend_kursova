@@ -435,3 +435,40 @@ async def test_notifications_are_private(
     assert mine.json()["count"] == 1
     assert theirs.json()["count"] == 0
     assert foreign_read.json() == {"updated": 0}
+
+
+async def test_profile_name_bio_and_notification_settings(
+    session_factory: async_sessionmaker[AsyncSession], client: AsyncClient
+) -> None:
+    tokens = await register(client)
+    headers = bearer(tokens)
+    assert tokens["user"]["display_name"] is None and tokens["user"]["bio"] is None
+
+    named = await client.patch(
+        "/api/v1/me", json={"display_name": "  Богдан  ", "bio": "P2P з 2021"}, headers=headers
+    )
+    assert named.status_code == 200, named.text
+    assert (named.json()["display_name"], named.json()["bio"]) == ("Богдан", "P2P з 2021")
+
+    cleared = await client.patch("/api/v1/me", json={"bio": ""}, headers=headers)
+    assert (cleared.json()["display_name"], cleared.json()["bio"]) == ("Богдан", None)
+    public = (await client.get("/api/v1/community/users/bohdan")).json()
+    assert (public["display_name"], public["bio"]) == ("Богдан", None)
+
+    too_long = await client.patch("/api/v1/me", json={"bio": "x" * 301}, headers=headers)
+    assert too_long.status_code == 422
+    assert (await client.patch("/api/v1/me", json={"bio": "x"})).status_code == 401
+
+    saved = await client.patch(
+        "/api/v1/me/settings",
+        json={"notify_comments": False, "notify_likes": True, "language": "en"},
+        headers=headers,
+    )
+    settings = saved.json()["settings"]
+    assert (settings["notify_comments"], settings["notify_likes"], settings["language"]) == (
+        False,
+        True,
+        "en",
+    )
+    bad = await client.patch("/api/v1/me/settings", json={"language": "de"}, headers=headers)
+    assert bad.status_code == 422

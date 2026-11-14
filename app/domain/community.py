@@ -81,12 +81,15 @@ class ProfileView(BaseModel):
 
     id: int
     username: str
+    display_name: str | None = None
+    bio: str | None = None
     is_admin: bool
     status: str
     joined_at: AwareDatetime
     posts: int
     likes_received: int
     reposts_received: int
+    comments: int = 0
     ban_until: AwareDatetime | None = None
     ban_reason: str | None = None
 

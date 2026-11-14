@@ -50,12 +50,17 @@ class UserSettings(BaseModel):
         None
     )
     hide_illiquid: bool | None = None
+    notify_comments: bool | None = None
+    notify_likes: bool | None = None
+    language: Literal["uk", "en"] | None = None
 
 
 class UserOut(BaseModel):
     id: int
     username: str
     email: str
+    display_name: str | None
+    bio: str | None
     role: UserRole
     status: UserStatus
     telegram_connected: bool
@@ -69,6 +74,8 @@ class UserOut(BaseModel):
             id=user.id,
             username=user.username,
             email=user.email,
+            display_name=user.display_name,
+            bio=user.bio,
             role=user.role,
             status=user.status,
             telegram_connected=user.telegram_chat_id is not None,

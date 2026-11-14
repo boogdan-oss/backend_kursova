@@ -1,10 +1,12 @@
+from typing import Annotated
+
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
 from redis.exceptions import RedisError
 
 from app.api.deps import CurrentUser, SessionDep
 from app.api.v1.auth import UserOut, UserSettings
-from app.db.repositories.users import set_telegram_chat
+from app.db.repositories.users import set_profile, set_telegram_chat
 from app.pubsub import get_redis
 from app.services.auth_service import update_settings
 from app.services.telegram_service import (
@@ -25,6 +27,26 @@ class TelegramLinkResponse(BaseModel):
 
 @router.get("/me", response_model=UserOut, summary="Профіль поточного користувача")
 async def me(user: CurrentUser) -> UserOut:
+    return UserOut.of(user)
+
+
+class ProfilePatch(BaseModel):
+    """Змінюються лише передані поля; null або порожній рядок очищає поле."""
+
+    display_name: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=64)] = (
+        None
+    )
+    bio: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=300)] = None
+
+
+@router.patch("/me", response_model=UserOut, summary="Змінити ім'я й опис профілю")
+async def patch_profile(body: ProfilePatch, user: CurrentUser, session: SessionDep) -> UserOut:
+    changes = {name: (getattr(body, name) or None) for name in body.model_fields_set}
+    if changes:
+        await set_profile(session, user.id, changes)
+        await session.commit()
+        for name, value in changes.items():
+            setattr(user, name, value)
     return UserOut.of(user)
 
 

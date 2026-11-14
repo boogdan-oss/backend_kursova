@@ -152,7 +152,7 @@ async def test_feed_likes_reposts_comments_and_profile(
     kinds = [
         (item["post"]["id"], (item["reposted_by"] or {}).get("username")) for item in feed["items"]
     ]
-    assert kinds == [(post["id"], "bob"), (post["id"], None), (first["id"], None)]
+    assert kinds == [(post["id"], "bob"), (first["id"], None)]
     assert feed["next_cursor"] is None
     anonymous = feed["items"][0]["post"]
     assert (anonymous["likes"], anonymous["comments"], anonymous["reposts"]) == (1, 1, 1)
@@ -166,7 +166,7 @@ async def test_feed_likes_reposts_comments_and_profile(
         cursor = page["next_cursor"]
         if cursor is None:
             break
-    assert pages == [(post["id"], True), (post["id"], False), (first["id"], False)]
+    assert pages == [(post["id"], True), (first["id"], False)]
 
     popular = (await client.get(f"{API}/feed", params={"sort": "popular"}, headers=bob)).json()
     assert [item["post"]["id"] for item in popular["items"]] == [post["id"], first["id"]]
@@ -183,6 +183,7 @@ async def test_feed_likes_reposts_comments_and_profile(
     profile = (await client.get(f"{API}/users/ALICE")).json()
     assert (profile["posts"], profile["likes_received"], profile["reposts_received"]) == (2, 1, 1)
     assert "email" not in profile and profile["ban_until"] is None
+    assert (await client.get(f"{API}/users/bob")).json()["comments"] == 1
     tabs = {
         tab: (await client.get(f"{API}/users/bob/feed", params={"tab": tab})).json()["items"]
         for tab in ("posts", "reposts", "likes")

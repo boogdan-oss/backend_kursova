@@ -51,6 +51,10 @@ async def set_status(session: AsyncSession, user_id: int, status: UserStatus) ->
     await session.execute(update(User).where(User.id == user_id).values(status=status))
 
 
+async def set_profile(session: AsyncSession, user_id: int, values: dict[str, Any]) -> None:
+    await session.execute(update(User).where(User.id == user_id).values(**values))
+
+
 async def set_settings(session: AsyncSession, user_id: int, settings: dict[str, Any]) -> None:
     await session.execute(update(User).where(User.id == user_id).values(settings=settings))
 
