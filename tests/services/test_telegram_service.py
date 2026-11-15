@@ -45,11 +45,19 @@ class Bot:
 
     def __init__(self, updates: list[Any] | None = None) -> None:
         self.sent: list[tuple[str, str]] = []
+        self.options: list[dict[str, Any]] = []
         self.updates = updates or []
         self.fail_polls = 0
+        self.commands_set = False
 
-    async def send_message(self, chat_id: str, text: str) -> None:
+    async def send_message(
+        self, chat_id: str, text: str, html: bool = False, button: Any = None
+    ) -> None:
         self.sent.append((chat_id, text))
+        self.options.append({"html": html, "button": button})
+
+    async def set_commands(self) -> None:
+        self.commands_set = True
 
     async def get_updates(self, offset: int | None) -> list[Any]:
         await asyncio.sleep(0)
@@ -143,7 +151,7 @@ async def test_other_text_gets_help(users: dict[str, Any]) -> None:
 
     await handle(message("привіт"), bot, FakeRedis())
 
-    assert "Підключити Telegram" in bot.sent[0][1]
+    assert "/pairs" in bot.sent[0][1] and "/rules" in bot.sent[0][1]
 
 
 async def test_group_chats_are_ignored(users: dict[str, Any]) -> None:
@@ -187,6 +195,7 @@ async def test_polling_survives_errors_and_moves_offset(
 
     assert users["chats"][5] == "777"
     assert len(bot.sent) == 2
+    assert bot.commands_set
 
 
 @respx.mock
@@ -209,3 +218,122 @@ async def test_client_returns_result_and_hides_token_in_errors() -> None:
     assert "ConnectError" in str(offline.value)
     for error in (not_found.value, offline.value):
         assert "SECRET" not in str(error) and error.__cause__ is None
+
+
+@pytest.fixture
+def linked(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Чат 777 прив'язаний до користувача 5; пари й правила підмінені."""
+    from datetime import UTC, datetime
+    from decimal import Decimal
+
+    from app.domain import AlertRule
+    from app.services.notification_templates import PairQuote
+
+    state: dict[str, Any] = {"quotes": [], "rules": []}
+
+    async def find_user_by_chat(_: Any, chat_id: str) -> FakeUser | None:
+        return FakeUser(5) if chat_id == "777" else None
+
+    async def tracked_quotes(_: Any, user_id: int) -> tuple[list[Any], int]:
+        return state["quotes"], 0
+
+    async def list_rules(_: Any, user_id: int, __: Any) -> list[Any]:
+        return state["rules"]
+
+    monkeypatch.setattr(telegram_service, "find_user_by_chat", find_user_by_chat)
+    monkeypatch.setattr(telegram_service, "tracked_quotes", tracked_quotes)
+    monkeypatch.setattr(telegram_service, "list_rules", list_rules)
+    state["quote"] = PairQuote(
+        asset="USDT",
+        fiat="UAH",
+        exchange=None,
+        buy_price=Decimal("41.05"),
+        buy_exchange="bybit",
+        sell_price=Decimal("41.62"),
+        sell_exchange="okx",
+        age_sec=12,
+    )
+    rule = AlertRule(
+        id=3,
+        user_id=5,
+        asset="USDT",
+        fiat="UAH",
+        exchange="binance",
+        title="<b>Мій</b> USDT",
+        min_spread=Decimal("1.5"),
+        min_ai_score=80,
+        channels=["telegram", "email"],
+    )
+    state["rule_row"] = type(
+        "Row", (), {"rule": rule, "last_triggered_at": datetime(2026, 11, 15, 9, 30, tzinfo=UTC)}
+    )
+    return state
+
+
+async def test_pairs_shows_best_prices_of_tracked_pairs(linked: dict[str, Any]) -> None:
+    bot = Bot()
+    linked["quotes"] = [linked["quote"]]
+
+    await handle(message("/pairs"), bot, FakeRedis())
+
+    text = bot.sent[0][1]
+    assert "<b>USDT/UAH</b>" in text
+    assert "Купити: 41.0500 UAH — Bybit" in text
+    assert "Продати: 41.6200 UAH — OKX" in text
+    assert "Спред 1.39 %" in text and "оновлено 12 с тому" in text
+    assert bot.options[0]["html"] is True
+    assert bot.options[0]["button"][0] == "Відкрити на сайті"
+
+
+async def test_pairs_without_tracked_pairs_explains_how_to_add(linked: dict[str, Any]) -> None:
+    bot = Bot()
+
+    await handle(message("/watchlist"), bot, FakeRedis())
+
+    assert "ще немає відстежуваних пар" in bot.sent[0][1]
+
+
+async def test_rules_lists_rules_and_escapes_titles(linked: dict[str, Any]) -> None:
+    bot = Bot()
+    linked["rules"] = [linked["rule_row"]]
+
+    await handle(message("/rules"), bot, FakeRedis())
+
+    text = bot.sent[0][1]
+    assert "&lt;b&gt;Мій&lt;/b&gt; USDT" in text
+    assert "USDT/UAH · Binance: спред ≥ 1.50 %, AI ≥ 80" in text
+    assert "Канали: Telegram, пошта" in text and "востаннє 15.11 09:30 UTC" in text
+
+
+async def test_commands_need_linked_chat(linked: dict[str, Any]) -> None:
+    bot = Bot()
+
+    await handle(message("/pairs", chat_id=111), bot, FakeRedis())
+
+    assert "не підключений" in bot.sent[0][1]
+
+
+@respx.mock
+async def test_client_sends_html_with_button_and_sets_commands() -> None:
+    sent = respx.post(f"{BASE}/sendMessage").respond(json={"ok": True, "result": {}})
+    commands = respx.post(f"{BASE}/setMyCommands").respond(json={"ok": True, "result": True})
+    client = TelegramClient(TOKEN)
+
+    await client.send_message("1", "<b>hi</b>", html=True, button=("Open", "https://x.test/a"))
+    await client.send_message("1", "plain", button=("Local", "http://localhost:5173"))
+    await client.set_commands()
+    await client.aclose()
+
+    import json as json_module
+
+    first = json_module.loads(sent.calls[0].request.content)
+    second = json_module.loads(sent.calls[1].request.content)
+    assert first["parse_mode"] == "HTML"
+    assert first["reply_markup"] == {
+        "inline_keyboard": [[{"text": "Open", "url": "https://x.test/a"}]]
+    }
+    assert "parse_mode" not in second and "reply_markup" not in second
+    names = [
+        item["command"] for item in json_module.loads(commands.calls[0].request.content)["commands"]
+    ]
+    assert names == ["pairs", "rules", "help", "stop"]

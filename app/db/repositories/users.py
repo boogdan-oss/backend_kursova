@@ -63,6 +63,15 @@ async def set_telegram_chat(session: AsyncSession, user_id: int, chat_id: str | 
     await session.execute(update(User).where(User.id == user_id).values(telegram_chat_id=chat_id))
 
 
+async def find_user_by_chat(session: AsyncSession, chat_id: str) -> User | None:
+    query = select(User).where(User.telegram_chat_id == chat_id)
+    return (await session.execute(query)).scalars().first()
+
+
+async def set_notify_email(session: AsyncSession, user_id: int, email: str | None) -> None:
+    await session.execute(update(User).where(User.id == user_id).values(notify_email=email))
+
+
 async def unlink_telegram_chat(session: AsyncSession, chat_id: str) -> int:
     result = await session.execute(
         update(User)

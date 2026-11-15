@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     assistant_effort: Literal["low", "medium", "high", "xhigh", "max"] = "medium"
     assistant_messages_per_hour: int = 30
 
+    alert_cooldown_min: int = 15
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""

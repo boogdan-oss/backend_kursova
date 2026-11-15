@@ -10,6 +10,7 @@ from pydantic import AwareDatetime, BaseModel, EmailStr, Field
 from redis.exceptions import RedisError
 
 from app.api.deps import CODE_PATTERN, CurrentUser, SessionDep
+from app.core.config import get_settings
 from app.db.models import User, UserRole, UserStatus
 from app.pubsub import get_redis
 from app.services.auth_service import (
@@ -25,6 +26,7 @@ from app.services.auth_service import (
     refresh,
     register,
 )
+from app.services.email_service import email_enabled
 from app.services.google_auth_service import (
     GoogleAuthError,
     allowed_origin,
@@ -65,6 +67,11 @@ class UserOut(BaseModel):
     status: UserStatus
     telegram_connected: bool
     google_connected: bool
+    notify_email: str | None = Field(
+        description="Підтверджена пошта для сповіщень; null — листи йдуть на email акаунта"
+    )
+    email_alerts_available: bool = Field(description="Чи налаштована пошта на сервері")
+    telegram_alerts_available: bool = Field(description="Чи налаштований Telegram-бот")
     settings: UserSettings
     created_at: AwareDatetime
 
@@ -80,6 +87,9 @@ class UserOut(BaseModel):
             status=user.status,
             telegram_connected=user.telegram_chat_id is not None,
             google_connected=user.google_sub is not None,
+            notify_email=user.notify_email,
+            email_alerts_available=email_enabled(),
+            telegram_alerts_available=bool(get_settings().telegram_bot_token),
             settings=UserSettings.model_validate(user.settings),
             created_at=user.created_at,
         )

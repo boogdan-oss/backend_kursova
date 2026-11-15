@@ -9,11 +9,11 @@ import asyncio
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import structlog
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.collectors.payment_map import normalize_payment
@@ -44,11 +44,21 @@ from app.engine.alerts import has_threshold, rule_matches
 from app.pubsub import get_redis, publish_event
 from app.services.email_service import EmailError, email_enabled, send_email
 from app.services.market_service import PairNotFound
+from app.services.notification_templates import (
+    alert_text as render_alert_text,
+)
+from app.services.notification_templates import (
+    email_alert,
+    site_url,
+    telegram_alert,
+)
 from app.services.telegram_service import TelegramClient, TelegramError
 
 MAX_RULES = 50
 MAX_WATCHLIST = 50
 MAX_EXTERNAL_PER_USER = 5
+COOLDOWN_KEY = "alerts:cooldown:{rule}:{route}"
+EXTERNAL = ("telegram", "email")
 THRESHOLD_FIELDS = ("min_spread", "min_net_spread", "min_ai_score", "min_rr", "min_net_profit")
 
 log = structlog.get_logger()
@@ -189,44 +199,39 @@ async def remove_rule(session: AsyncSession, user: User, rule_id: int) -> bool:
     return removed
 
 
-def _number(value: Decimal | None, digits: int = 2) -> str:
-    return "—" if value is None else f"{value:.{digits}f}"
-
-
 def alert_text(rule: AlertRule, item: Opportunity) -> str:
-    """Текст сповіщення українською: однаковий для історії, Telegram і пошти."""
-    title = rule.title or f"Правило #{rule.id}"
-    route = (
-        f"купити на {item.buy_exchange} за {_number(item.buy_price, 4)}, "
-        f"продати на {item.sell_exchange} за {_number(item.sell_price, 4)}"
-    )
+    """Текст сповіщення українською для історії на сайті (Telegram і пошта — з розміткою)."""
+    return render_alert_text(rule, item)
+
+
+def route_key(item: Opportunity) -> str:
+    """Та сама угода: вид, біржі купівлі й продажу, а для ланцюжка — кроки."""
     if item.kind == "chain":
-        route = "ланцюжок: " + " → ".join(f"{step.exchange} {step.action}" for step in item.steps)
-    lines = [
-        f"🔔 {title}",
-        f"{item.asset}/{item.fiat}: {route}",
-        f"Спред {_number(item.spread_pct)} %, чистий {_number(item.net_spread_pct)} %, "
-        f"прибуток ≈ {_number(item.estimated_profit)} {item.fiat}",
-    ]
-    extras = []
-    if item.ai_score is not None:
-        extras.append(f"AI Score {item.ai_score}")
-    if item.rr is not None:
-        extras.append(f"RR {_number(item.rr)}")
-    if extras:
-        lines.append(" · ".join(extras))
-    lines.append("Аналітика, не фінансова порада. Перевірте умови на біржі перед угодою.")
-    frontend = get_settings().frontend_url
-    if frontend:
-        lines.append(f"{frontend.rstrip('/')}/arbitrage")
-    return "\n".join(lines)
+        return "chain:" + "-".join(f"{step.exchange}.{step.asset}" for step in item.steps)
+    return f"{item.kind}:{item.buy_exchange}:{item.sell_exchange}"
+
+
+async def outside_cooldown(rule_id: int, item: Opportunity) -> bool:
+    """Чи можна слати це правило за цим маршрутом у Telegram і пошту.
+
+    Можливість, що зникла й з'явилась знову, не дублюється частіше за ALERT_COOLDOWN_MIN.
+    Без Redis обмеження немає.
+    """
+    minutes = get_settings().alert_cooldown_min
+    if minutes <= 0:
+        return True
+    key = COOLDOWN_KEY.format(rule=rule_id, route=route_key(item))
+    try:
+        return bool(await get_redis().set(key, "1", ex=minutes * 60, nx=True))
+    except (RedisError, OSError):
+        return True
 
 
 @dataclass(frozen=True, slots=True)
 class PendingDelivery:
     notification_id: int
     target: RuleTarget
-    text: str
+    item: Opportunity
     delivery: dict[str, str]
 
 
@@ -256,6 +261,10 @@ class AlertDispatcher:
                         continue
                     text = alert_text(target.rule, item)
                     delivery = {"in_app": "sent"} if "in_app" in target.rule.channels else {}
+                    external = [c for c in EXTERNAL if c in target.rule.channels]
+                    if external and not await outside_cooldown(target.rule.id, item):
+                        delivery |= {channel: "skipped: cooldown" for channel in external}
+                        external = []
                     notification_id, sent_at = await create_notification(
                         session,
                         {
@@ -283,8 +292,8 @@ class AlertDispatcher:
                             ),
                         )
                     )
-                    if {"telegram", "email"} & set(target.rule.channels):
-                        pending.append(PendingDelivery(notification_id, target, text, delivery))
+                    if external:
+                        pending.append(PendingDelivery(notification_id, target, item, delivery))
         for event in events:
             await publish_event(get_redis(), event)
         if pending:
@@ -306,14 +315,14 @@ class AlertDispatcher:
             user_id = item.target.rule.user_id
             delivery = dict(item.delivery)
             if sent_per_user[user_id] >= MAX_EXTERNAL_PER_USER:
-                for channel in ("telegram", "email"):
-                    if channel in item.target.rule.channels:
+                for channel in EXTERNAL:
+                    if channel in item.target.rule.channels and channel not in delivery:
                         delivery[channel] = "skipped: limit"
             else:
                 sent_per_user[user_id] += 1
-                if "telegram" in item.target.rule.channels:
+                if "telegram" in item.target.rule.channels and "telegram" not in delivery:
                     delivery["telegram"] = await self._send_telegram(item)
-                if "email" in item.target.rule.channels:
+                if "email" in item.target.rule.channels and "email" not in delivery:
                     delivery["email"] = await self._send_email(item)
             try:
                 async with self._session_factory() as session, session.begin():
@@ -327,7 +336,13 @@ class AlertDispatcher:
         if not item.target.telegram_chat_id:
             return "skipped: not linked"
         try:
-            await self._telegram.send_message(item.target.telegram_chat_id, item.text)
+            url = site_url("/arbitrage")
+            await self._telegram.send_message(
+                item.target.telegram_chat_id,
+                telegram_alert(item.target.rule, item.item),
+                html=True,
+                button=("Відкрити арбітраж", url) if url else None,
+            )
         except TelegramError as exc:
             log.warning("alerts.telegram_failed", error=str(exc))
             return "failed"
@@ -336,9 +351,9 @@ class AlertDispatcher:
     async def _send_email(self, item: PendingDelivery) -> str:
         if not email_enabled():
             return "skipped: smtp disabled"
-        subject = f"CryptoParser: {item.target.rule.title or 'сповіщення'}"
+        content = email_alert(item.target.rule, item.item)
         try:
-            await send_email(item.target.email, subject, item.text)
+            await send_email(item.target.mail_to, content.subject, content.text, content.html)
         except EmailError as exc:
             log.warning("alerts.email_failed", error=str(exc))
             return "failed"

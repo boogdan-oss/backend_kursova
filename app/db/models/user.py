@@ -23,6 +23,7 @@ class User(TimestampMixin, Base):
     google_sub: Mapped[str | None] = mapped_column(String(64), unique=True)
     display_name: Mapped[str | None] = mapped_column(String(64))
     bio: Mapped[str | None] = mapped_column(String(300))
+    notify_email: Mapped[str | None] = mapped_column(String(255))
 
 
 class RefreshToken(TimestampMixin, Base):

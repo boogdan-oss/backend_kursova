@@ -19,13 +19,15 @@ def email_enabled() -> bool:
     return bool(settings.smtp_host and settings.smtp_from)
 
 
-def _send(to: str, subject: str, body: str) -> None:
+def _send(to: str, subject: str, body: str, html: str | None) -> None:
     settings = get_settings()
     message = EmailMessage()
     message["From"] = settings.smtp_from
     message["To"] = to
     message["Subject"] = subject
     message.set_content(body)
+    if html:
+        message.add_alternative(html, subtype="html")
     smtp_class = smtplib.SMTP_SSL if settings.smtp_port == SSL_PORT else smtplib.SMTP
     try:
         with smtp_class(settings.smtp_host, settings.smtp_port, timeout=SMTP_TIMEOUT_SEC) as smtp:
@@ -38,7 +40,8 @@ def _send(to: str, subject: str, body: str) -> None:
         raise EmailError(type(exc).__name__) from None
 
 
-async def send_email(to: str, subject: str, body: str) -> None:
+async def send_email(to: str, subject: str, body: str, html: str | None = None) -> None:
+    """Лист з текстовою й, якщо є, HTML-версією."""
     if not email_enabled():
         raise EmailError("SMTP не налаштований")
-    await asyncio.to_thread(_send, to, subject, body)
+    await asyncio.to_thread(_send, to, subject, body, html)

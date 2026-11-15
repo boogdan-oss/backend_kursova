@@ -48,6 +48,11 @@ class RuleTarget:
     username: str
     email: str
     telegram_chat_id: str | None
+    notify_email: str | None = None
+
+    @property
+    def mail_to(self) -> str:
+        return self.notify_email or self.email
 
 
 Columns = TypeVarTuple("Columns")
@@ -214,7 +219,7 @@ async def rules_for_pairs(
             select(AlertRule, Asset.code, Fiat.code, Exchange.code, User.username, User.email)
         )
         .join(User, User.id == AlertRule.user_id)
-        .add_columns(User.telegram_chat_id)
+        .add_columns(User.telegram_chat_id, User.notify_email)
         .where(
             AlertRule.enabled,
             User.status == UserStatus.ACTIVE,
@@ -223,8 +228,8 @@ async def rules_for_pairs(
         .order_by(AlertRule.id)
     )
     return [
-        RuleTarget(_to_rule(rule, asset, fiat, exchange), username, email, chat_id)
-        for rule, asset, fiat, exchange, username, email, chat_id in (
+        RuleTarget(_to_rule(rule, asset, fiat, exchange), username, email, chat_id, notify)
+        for rule, asset, fiat, exchange, username, email, chat_id, notify in (
             await session.execute(query)
         ).all()
     ]

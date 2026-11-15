@@ -73,9 +73,12 @@ class FakeRedis:
         self.published: list[tuple[str, str]] = []
         self.channels: dict[str, list[asyncio.Queue[dict[str, Any]]]] = {}
 
-    async def set(self, key: str, value: str, ex: int = 0) -> None:
+    async def set(self, key: str, value: str, ex: int = 0, nx: bool = False) -> bool | None:
+        if nx and key in self.values:
+            return None
         self.values[key] = value
         self.expires[key] = ex
+        return True
 
     async def get(self, key: str) -> str | None:
         return self.values.get(key)

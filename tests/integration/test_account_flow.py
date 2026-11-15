@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.db.models import Notification, User, UserStatus
 from app.db.session import get_session
+from app.domain import Opportunity
 from app.main import app
 from app.pubsub import MARKET_UPDATES
 from app.services import auth_service
@@ -352,7 +353,9 @@ class FakeTelegram:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str]] = []
 
-    async def send_message(self, chat_id: str, text: str) -> None:
+    async def send_message(
+        self, chat_id: str, text: str, html: bool = False, button: Any = None
+    ) -> None:
         self.sent.append((chat_id, text))
 
 
@@ -394,7 +397,7 @@ async def test_new_opportunity_triggers_matching_rules(
     assert alerts[0]["data"]["rule_id"] == fires.json()["id"]
     assert alerts[0]["data"]["opportunity"]["buy_exchange"] == "binance"
     assert [chat for chat, _ in telegram.sent] == ["777"]
-    assert "Спред" in telegram.sent[0][1] and "USDT/UAH" in telegram.sent[0][1]
+    assert "<b>Спред</b>" in telegram.sent[0][1] and "<b>USDT/UAH</b>" in telegram.sent[0][1]
 
     async with session_factory() as session:
         stored = (await session.execute(select(Notification))).scalar_one()
@@ -472,3 +475,86 @@ async def test_profile_name_bio_and_notification_settings(
     )
     bad = await client.patch("/api/v1/me/settings", json={"language": "de"}, headers=headers)
     assert bad.status_code == 422
+
+
+async def test_email_alerts_go_to_confirmed_address_without_repeats(
+    session_factory: async_sessionmaker[AsyncSession],
+    client: AsyncClient,
+    redis: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import alert_service, notify_channels_service
+
+    letters: list[dict[str, Any]] = []
+
+    async def send_email(to: str, subject: str, body: str, html: str | None = None) -> None:
+        letters.append({"to": to, "subject": subject, "body": body, "html": html})
+
+    from app.api.v1 import auth as auth_api
+
+    for module in (alert_service, notify_channels_service):
+        monkeypatch.setattr(module, "send_email", send_email)
+    for module in (alert_service, notify_channels_service, auth_api):
+        monkeypatch.setattr(module, "email_enabled", lambda: True)
+
+    owner = bearer(await register(client))
+    requested = await client.post(
+        "/api/v1/me/notify-email", headers=owner, json={"email": "Alerts@Example.org"}
+    )
+    assert requested.status_code == 200, requested.text
+    assert requested.json() == {"email": "alerts@example.org", "expires_in": 900}
+    code = letters[0]["subject"].rsplit(" ", 1)[-1]
+    wrong = await client.post(
+        "/api/v1/me/notify-email/confirm", headers=owner, json={"code": "abc"}
+    )
+    assert wrong.status_code == 422
+    confirmed = await client.post(
+        "/api/v1/me/notify-email/confirm", headers=owner, json={"code": code}
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["notify_email"] == "alerts@example.org"
+    assert confirmed.json()["email_alerts_available"] is True
+
+    test = await client.post(
+        "/api/v1/me/notifications/test", headers=owner, json={"channel": "email"}
+    )
+    assert test.json() == {"channel": "email", "sent_to": "alerts@example.org"}
+    no_telegram = await client.post(
+        "/api/v1/me/notifications/test", headers=owner, json={"channel": "telegram"}
+    )
+    assert no_telegram.status_code in (400, 503)
+
+    rule = await client.post(
+        "/api/v1/alerts/rules",
+        headers=owner,
+        json={"asset": "USDT", "fiat": "UAH", "min_spread": "1", "channels": ["email"]},
+    )
+    assert rule.status_code == 201, rule.text
+    letters.clear()
+    dispatcher = AlertDispatcher(None, session_factory)
+    scanner = OpportunityScanner(
+        FixedTracker(profitable_offers()), set(), session_factory, alerts=dispatcher
+    )
+    await scanner.scan()
+    await dispatcher.drain()
+
+    assert [letter["to"] for letter in letters] == ["alerts@example.org"]
+    assert "USDT/UAH" in letters[0]["subject"] and letters[0]["html"]
+
+    async with session_factory() as session:
+        stored = (await session.execute(select(Notification))).scalar_one()
+        opened = [(Opportunity.model_validate(stored.data), stored.opportunity_id)]
+    await dispatcher.dispatch(opened)
+    await dispatcher.drain()
+    assert len(letters) == 1
+    async with session_factory() as session:
+        deliveries = [
+            row.delivery
+            for row in (await session.execute(select(Notification).order_by(Notification.id)))
+            .scalars()
+            .all()
+        ]
+    assert deliveries == [{"email": "sent"}, {"email": "skipped: cooldown"}]
+
+    cleared = await client.delete("/api/v1/me/notify-email", headers=owner)
+    assert cleared.json()["notify_email"] is None
