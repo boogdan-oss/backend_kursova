@@ -93,7 +93,7 @@ async def collect_all(
 ) -> None:
     for adapter in adapters:
         for side in SIDES:
-            task = CollectTask(adapter.name, "USDT", "UAH", side)  # type: ignore[arg-type]
+            task = CollectTask(adapter.name, "USDT", "UAH", side)
             await collect_task(adapter, task, tracker, session_factory)
 
 
@@ -112,7 +112,7 @@ def profitable_offers() -> list[Offer]:
         ("bybit", "BUY", "42.50"),
         ("bybit", "SELL", "41.80"),
     ):
-        offer = make_offer(price, side, **limits)  # type: ignore[arg-type]
+        offer = make_offer(price, side, **limits)
         offers.append(offer.model_copy(update={"exchange": exchange, "fetched_at": now}))
     return offers * 3
 
@@ -216,7 +216,7 @@ async def test_scanner_warms_chain_cache_for_priority_fiats(
         FixedTracker(profitable_offers()), {("USDT", "UAH")}, session_factory
     ).scan()
 
-    cached = await read_chains(redis, chains_key("UAH", None))  # type: ignore[arg-type]
+    cached = await read_chains(redis, chains_key("UAH", None))
     assert cached is not None
     assert all(item.kind == "chain" for item in cached.items)
 

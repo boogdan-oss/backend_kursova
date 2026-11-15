@@ -26,7 +26,7 @@ def test_parse_pairs() -> None:
 async def collector() -> AsyncIterator[ExchangeCollector]:
     adapter = BinanceAdapter(AdaptiveRateLimiter(1000, 1000, 60))
     settings = Settings(
-        _env_file=None,  # type: ignore[call-arg]
+        _env_file=None,
         database_url="postgresql+asyncpg://test:test@127.0.0.1:1/test",
         redis_url="redis://127.0.0.1:1/0",
         collector_min_refresh_sec=0,

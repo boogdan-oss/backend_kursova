@@ -5,7 +5,7 @@ from pathlib import Path
 from alembic.config import Config
 
 from alembic import command
-from app.db import models  # noqa: F401
+from app.db import models
 from app.db.base import Base
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]

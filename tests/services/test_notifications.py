@@ -217,11 +217,11 @@ async def test_resend_is_throttled_and_attempts_are_limited(mail: dict[str, Any]
     wrong = "111111" if code != "111111" else "222222"
     for _ in range(4):
         with pytest.raises(ChannelError, match="Невірний код"):
-            await confirm_notify_email(FakeSession(), redis, user, wrong)  # type: ignore[arg-type]
+            await confirm_notify_email(FakeSession(), redis, user, wrong)
     with pytest.raises(ChannelError, match="Забагато"):
-        await confirm_notify_email(FakeSession(), redis, user, wrong)  # type: ignore[arg-type]
+        await confirm_notify_email(FakeSession(), redis, user, wrong)
     with pytest.raises(ChannelError, match="застарів"):
-        await confirm_notify_email(FakeSession(), redis, user, code)  # type: ignore[arg-type]
+        await confirm_notify_email(FakeSession(), redis, user, code)
 
 
 async def test_account_email_confirmed_again_clears_override(mail: dict[str, Any]) -> None:
@@ -230,36 +230,36 @@ async def test_account_email_confirmed_again_clears_override(mail: dict[str, Any
     await request_notify_email(redis, user, "BOHDAN@example.com")
     code = json.loads(redis.values[CODE_KEY.format(user_id=1)])["code"]
 
-    await confirm_notify_email(FakeSession(), redis, user, code)  # type: ignore[arg-type]
+    await confirm_notify_email(FakeSession(), redis, user, code)
 
     assert mail["saved"] == [None] and user.notify_email is None
     user.notify_email = "x@mail.test"
-    await clear_notify_email(FakeSession(), user)  # type: ignore[arg-type]
+    await clear_notify_email(FakeSession(), user)
     assert user.notify_email is None
 
 
 async def test_notify_email_errors(mail: dict[str, Any]) -> None:
     mail["enabled"] = False
     with pytest.raises(ChannelError) as disabled:
-        await request_notify_email(FakeRedis(), FakeUser(), "a@mail.test")  # type: ignore[arg-type]
+        await request_notify_email(FakeRedis(), FakeUser(), "a@mail.test")
     assert disabled.value.kind == "unavailable"
 
     mail["enabled"], mail["fail"] = True, True
     with pytest.raises(ChannelError) as failed:
-        await request_notify_email(FakeRedis(), FakeUser(), "a@mail.test")  # type: ignore[arg-type]
+        await request_notify_email(FakeRedis(), FakeUser(), "a@mail.test")
     assert failed.value.kind == "failed"
 
 
 async def test_test_email_goes_to_notify_address(mail: dict[str, Any]) -> None:
     redis: Any = FakeRedis()
 
-    sent_to = await send_test(redis, FakeUser(notify="alerts@mail.test"), "email")  # type: ignore[arg-type]
+    sent_to = await send_test(redis, FakeUser(notify="alerts@mail.test"), "email")
 
     assert sent_to == "alerts@mail.test"
     assert mail["sent"][0]["subject"] == "CryptoParser: тестове сповіщення"
     assert mail["sent"][0]["html"]
     with pytest.raises(ChannelError) as again:
-        await send_test(redis, FakeUser(), "email")  # type: ignore[arg-type]
+        await send_test(redis, FakeUser(), "email")
     assert again.value.kind == "too_often"
 
 
@@ -274,7 +274,7 @@ async def test_test_telegram(monkeypatch: pytest.MonkeyPatch, mail: dict[str, An
 
     monkeypatch.setattr(notify_channels_service, "get_telegram", lambda: Bot())
 
-    assert await send_test(FakeRedis(), FakeUser(), "telegram") == "Telegram"  # type: ignore[arg-type]
+    assert await send_test(FakeRedis(), FakeUser(), "telegram") == "Telegram"
     assert sent[0][0] == "555" and sent[0][2] is True and "bohdan" in sent[0][1]
     with pytest.raises(ChannelError, match="підключіть Telegram"):
-        await send_test(FakeRedis(), FakeUser(chat=None), "telegram")  # type: ignore[arg-type]
+        await send_test(FakeRedis(), FakeUser(chat=None), "telegram")

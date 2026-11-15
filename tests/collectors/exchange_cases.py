@@ -18,4 +18,4 @@ def fixture(name: str) -> dict[str, Any]:
 
 def make_adapter(adapter_class: type[ExchangeAdapter], client: httpx.AsyncClient) -> Any:
     limiter = AdaptiveRateLimiter(initial_rps=1000, max_rps=1000, cooldown_sec=60)
-    return adapter_class(limiter, client, retry_base_sec=0)  # type: ignore[call-arg]
+    return adapter_class(limiter, client, retry_base_sec=0)

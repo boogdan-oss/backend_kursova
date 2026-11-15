@@ -21,8 +21,6 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # .env у CI немає, а без адрес налаштування не завантажаться. Ці адреси навмисно неробочі:
-    # звичайні тести не мають торкатись БД і Redis. Справжня БД — лише для інтеграційних тестів
     env:
       DATABASE_URL: postgresql+asyncpg://ci:ci@127.0.0.1:1/ci
       REDIS_URL: redis://127.0.0.1:1/0
@@ -90,7 +88,6 @@ jobs:
           KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
         run: |
           install -m 700 -d ~/.ssh
-          # Ключ, скопійований у Windows, може мати CRLF — ssh такий не прочитає
           printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
@@ -119,14 +116,13 @@ jobs:
           cd ~/cryptoparser
 
           if [ ! -f .env ]; then
-            echo "Немає ~/cryptoparser/.env — створи його з .env.prod.example" >&2
+            echo "Немає ~/cryptoparser/.env — створи його: усі змінні й типові значення в app/core/settings.py" >&2
             exit 1
           fi
 
           compose="docker compose -f docker-compose.prod.yml"
 
           $compose build api
-          # </dev/null: скрипт читається зі stdin, і docker compose з'їв би його решту
           $compose run --rm -T api alembic upgrade head </dev/null
           $compose up -d api collector
 

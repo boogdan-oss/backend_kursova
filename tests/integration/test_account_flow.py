@@ -383,7 +383,7 @@ async def test_new_opportunity_triggers_matching_rules(
     assert fires.status_code == too_high.status_code == 201
 
     telegram = FakeTelegram()
-    dispatcher = AlertDispatcher(telegram, session_factory)  # type: ignore[arg-type]
+    dispatcher = AlertDispatcher(telegram, session_factory)
     scanner = OpportunityScanner(
         FixedTracker(profitable_offers()), set(), session_factory, alerts=dispatcher
     )

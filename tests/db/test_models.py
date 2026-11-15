@@ -1,7 +1,7 @@
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateIndex, CreateTable
 
-from app.db import models  # noqa: F401
+from app.db import models
 from app.db.base import Base
 
 EXPECTED_TABLES = {

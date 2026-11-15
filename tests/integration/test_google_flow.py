@@ -44,7 +44,7 @@ async def session_factory(
             yield session
 
     settings = Settings(
-        _env_file=None,  # type: ignore[call-arg]
+        _env_file=None,
         database_url=DATABASE_URL,
         redis_url="redis://localhost:1/0",
         google_client_id=CLIENT_ID,

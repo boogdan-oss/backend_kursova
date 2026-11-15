@@ -100,7 +100,7 @@ def message(text: str, chat_id: int = 777, chat_type: str = "private", update_id
 
 
 async def handle(update: Any, bot: Bot, redis: Any) -> None:
-    await handle_update(update, bot, redis, fake_session_factory)  # type: ignore[arg-type]
+    await handle_update(update, bot, redis, fake_session_factory)
 
 
 async def test_link_code_lives_ten_minutes() -> None:
@@ -176,7 +176,7 @@ async def test_polling_survives_errors_and_moves_offset(
 ) -> None:
     monkeypatch.setattr(telegram_service, "RETRY_PAUSE_SEC", 0)
     redis = FakeRedis()
-    code = await create_link(redis, 5)  # type: ignore[arg-type]
+    code = await create_link(redis, 5)
     bot = Bot([message("привіт", update_id=10), message(f"/start {code}", update_id=11)])
     bot.fail_polls = 1
     stop = asyncio.Event()
@@ -187,7 +187,7 @@ async def test_polling_survives_errors_and_moves_offset(
 
     await asyncio.wait_for(
         asyncio.gather(
-            poll_updates(stop, bot, lambda: redis, fake_session_factory),  # type: ignore[arg-type]
+            poll_updates(stop, bot, lambda: redis, fake_session_factory),
             stop_when_linked(),
         ),
         timeout=5,

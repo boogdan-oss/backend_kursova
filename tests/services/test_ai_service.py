@@ -80,7 +80,7 @@ class FakeClaude:
 
 async def collect(client: FakeClaude, question: str = "Де купити USDT?") -> list[ChatEvent]:
     history: Any = [{"role": "user", "content": question}]
-    return [event async for event in chat_claude(history, client)]  # type: ignore[arg-type]
+    return [event async for event in chat_claude(history, client)]
 
 
 async def test_plain_answer_streams_text_and_finishes() -> None:

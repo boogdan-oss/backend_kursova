@@ -275,7 +275,7 @@ async def test_failed_transaction_keeps_pointer_on_previous_batch(
 
     with pytest.raises(Exception, match="No row was found"):
         await collect_task(
-            FakeAdapter(),  # type: ignore[arg-type]
+            FakeAdapter(),
             broken,
             MarketStatsTracker(),
             session_factory,

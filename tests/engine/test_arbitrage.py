@@ -33,7 +33,7 @@ def offer(
     **kwargs: str | int,
 ) -> Offer:
     limits = {"min_amount": "100", "max_amount": "1000000", "available": "5000"}
-    built = make_offer(price, side, **{**limits, **kwargs})  # type: ignore[arg-type]
+    built = make_offer(price, side, **{**limits, **kwargs})
     return built.model_copy(update={"exchange": exchange, "asset": asset, "fiat": fiat})
 
 

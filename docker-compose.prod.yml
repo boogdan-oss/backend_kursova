@@ -1,6 +1,5 @@
 name: cryptoparser
 
-# Спільне для API і collector: один образ, ті самі налаштування
 x-backend: &backend
   image: cryptoparser-backend
   restart: unless-stopped
@@ -22,7 +21,6 @@ x-backend: &backend
   networks:
     - infra
 
-# БД і Redis живуть окремо в ~/crypto-infra на сервері: деплой API їх не перезапускає
 services:
   api:
     <<: *backend

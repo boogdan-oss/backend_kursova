@@ -24,7 +24,7 @@ CLIENT_ID = "123.apps.googleusercontent.com"
 @pytest.fixture(autouse=True)
 def google_settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
     settings = Settings(
-        _env_file=None,  # type: ignore[call-arg]
+        _env_file=None,
         database_url="postgresql+asyncpg://x:y@localhost/z",
         redis_url="redis://localhost:1/0",
         google_client_id=CLIENT_ID,
@@ -102,7 +102,7 @@ async def test_start_without_google_keys(google_settings: Settings) -> None:
     google_settings.google_client_secret = ""
 
     with pytest.raises(GoogleAuthError) as failure:
-        await start_url(FakeRedis(), None, None)  # type: ignore[arg-type]
+        await start_url(FakeRedis(), None, None)
 
     assert failure.value.code == "google_disabled"
 

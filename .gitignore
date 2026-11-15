@@ -9,4 +9,3 @@ venv/
 .ruff_cache/
 _folder_info.txt
 .txt
-.env.prod.example

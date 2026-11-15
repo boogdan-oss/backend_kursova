@@ -106,4 +106,4 @@ async def opportunity_history(
         query = query.where(Fiat.code == fiat)
     if kind is not None:
         query = query.where(Opportunity.kind == kind)
-    return [tuple(row) for row in (await session.execute(query)).all()]  # type: ignore[misc]
+    return list((await session.execute(query)).tuples().all())

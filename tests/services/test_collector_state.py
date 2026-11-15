@@ -44,7 +44,7 @@ async def test_status_roundtrip() -> None:
 
 
 async def test_missing_status_means_collector_is_down() -> None:
-    assert await read_status(FakeRedis(), "binance") is None  # type: ignore[arg-type]
+    assert await read_status(FakeRedis(), "binance") is None
 
 
 async def test_corrupted_status_is_ignored() -> None:

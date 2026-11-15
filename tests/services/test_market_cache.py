@@ -74,7 +74,7 @@ async def test_other_version_is_a_miss() -> None:
 
 
 async def test_missing_key_is_a_miss() -> None:
-    assert await read_snapshot(FakeRedis(), KEY, "v1") is None  # type: ignore[arg-type]
+    assert await read_snapshot(FakeRedis(), KEY, "v1") is None
 
 
 async def test_corrupted_value_is_a_miss() -> None:

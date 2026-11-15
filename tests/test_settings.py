@@ -32,7 +32,7 @@ def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def load(**values: object) -> Settings:
-    return Settings(_env_file=None, **values)  # type: ignore[call-arg, arg-type]
+    return Settings(_env_file=None, **values)
 
 
 def test_no_connection_values_live_in_code() -> None:

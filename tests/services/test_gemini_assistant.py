@@ -32,7 +32,7 @@ def chunk(
         candidates=[
             types.Candidate(
                 content=types.Content(role="model", parts=list(parts)),
-                finish_reason=finish,  # type: ignore[arg-type]
+                finish_reason=finish,
             )
         ],
         usage_metadata=types.GenerateContentResponseUsageMetadata(**usage) if usage else None,
@@ -74,7 +74,7 @@ def settings(monkeypatch: pytest.MonkeyPatch) -> None:
 
 async def collect(client: FakeGemini, question: str = "Курс долара?") -> list[ChatEvent]:
     history = gemini_history([ChatTurn("user", question)])
-    return [event async for event in chat_gemini(history, client)]  # type: ignore[arg-type]
+    return [event async for event in chat_gemini(history, client)]
 
 
 async def test_plain_answer_streams_text_and_finishes() -> None:
