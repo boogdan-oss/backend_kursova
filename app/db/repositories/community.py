@@ -45,6 +45,7 @@ from app.db.models import (
     UserRole,
 )
 from app.domain.community import (
+    AdminUserView,
     AttachedOpportunity,
     Author,
     BanView,
@@ -56,6 +57,7 @@ from app.domain.community import (
     ReportReason,
     ReportView,
 )
+from app.domain.roles import cast_role, is_staff
 
 REPORT_REASONS: frozenset[str] = frozenset(get_args(ReportReason))
 PRICE_WINDOW = timedelta(minutes=15)
@@ -69,7 +71,7 @@ class FeedRow:
 
 
 def _author(user_id: int, username: str, role: str) -> Author:
-    return Author(id=user_id, username=username, is_admin=role == UserRole.ADMIN)
+    return Author(id=user_id, username=username, is_admin=is_staff(role), role=cast_role(role))
 
 
 async def authors(session: AsyncSession, ids: Sequence[int]) -> dict[int, Author]:
@@ -494,7 +496,8 @@ async def profile_view(session: AsyncSession, user: User) -> ProfileView:
         username=user.username,
         display_name=user.display_name,
         bio=user.bio,
-        is_admin=user.role == UserRole.ADMIN,
+        is_admin=is_staff(user.role),
+        role=cast_role(user.role),
         status=user.status,
         joined_at=user.created_at,
         posts=counts[0],
@@ -767,3 +770,61 @@ async def buy_price_change(
         pair: (sum(values, Decimal(0)) / len(values)).quantize(Decimal("0.01"))
         for pair, values in changes.items()
     }
+
+
+async def admin_user_views(
+    session: AsyncSession,
+    query: str | None,
+    role: UserRole | None,
+    limit: int,
+    user_id: int | None = None,
+) -> list[AdminUserView]:
+    posts = (
+        select(func.count())
+        .select_from(Post)
+        .where(Post.author_id == User.id, Post.status == ContentStatus.VISIBLE)
+        .correlate(User)
+        .scalar_subquery()
+    )
+    reported = (
+        select(func.count())
+        .select_from(Report)
+        .outerjoin(Post, Post.id == Report.post_id)
+        .outerjoin(Comment, Comment.id == Report.comment_id)
+        .where(func.coalesce(Post.author_id, Comment.author_id) == User.id)
+        .correlate(User)
+        .scalar_subquery()
+    )
+    statement = select(User, posts, reported).order_by(User.created_at.desc(), User.id.desc())
+    if user_id is not None:
+        statement = statement.where(User.id == user_id)
+    if role is not None:
+        statement = statement.where(User.role == role)
+    if query:
+        pattern = f"%{query.strip().lower()}%"
+        statement = statement.where(
+            or_(
+                func.lower(User.username).like(pattern),
+                func.lower(func.coalesce(User.display_name, "")).like(pattern),
+                func.lower(User.email).like(pattern),
+            )
+        )
+    rows = (await session.execute(statement.limit(limit))).all()
+    return [
+        AdminUserView(
+            id=user.id,
+            username=user.username,
+            display_name=user.display_name,
+            email=user.email,
+            role=cast_role(user.role),
+            status=user.status,
+            created_at=user.created_at,
+            posts=post_count,
+            reports_against=report_count,
+        )
+        for user, post_count, report_count in rows
+    ]
+
+
+async def set_role(session: AsyncSession, user_id: int, role: UserRole) -> None:
+    await session.execute(update(User).where(User.id == user_id).values(role=role))

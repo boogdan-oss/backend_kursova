@@ -1,5 +1,6 @@
 from app.domain.alerts import AlertNotification, AlertRule, NotificationChannel
 from app.domain.community import (
+    AdminUserView,
     AttachedOpportunity,
     Author,
     BanView,
@@ -28,8 +29,10 @@ from app.domain.market import CollectorStatus, Freshness, MarketSnapshot, P2PMar
 from app.domain.merchant import Merchant
 from app.domain.offer import Offer, Side
 from app.domain.opportunity import Opportunity, OpportunityKind, RiskLevel, Step
+from app.domain.roles import Role, is_staff, outranks
 
 __all__ = [
+    "AdminUserView",
     "EVENT_TYPES",
     "AlertEvent",
     "AlertNotification",
@@ -59,10 +62,13 @@ __all__ = [
     "ProfileView",
     "ReportReason",
     "ReportView",
+    "Role",
     "RiskLevel",
     "Side",
     "SnapshotEvent",
     "SnapshotUpdate",
     "Step",
     "TrendingPair",
+    "is_staff",
+    "outranks",
 ]

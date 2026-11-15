@@ -133,7 +133,12 @@ async def test_feed_likes_reposts_comments_and_profile(
     attached = post["opportunity"]
     assert (attached["buy_exchange"], attached["sell_exchange"]) == ("bybit", "binance")
     assert (attached["buy_price"], attached["sell_price"]) == ("41.05000000", "41.62000000")
-    assert post["author"] == {"id": post["author"]["id"], "username": "alice", "is_admin": False}
+    assert post["author"] == {
+        "id": post["author"]["id"],
+        "username": "alice",
+        "is_admin": False,
+        "role": "user",
+    }
 
     liked = await client.put(f"{API}/posts/{post['id']}/like", headers=bob)
     again = await client.put(f"{API}/posts/{post['id']}/like", headers=bob)

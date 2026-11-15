@@ -1,6 +1,7 @@
 """Спільнота (FR-31 – FR-46): стрічка, публікації, коментарі, профілі, скарги й модерація.
 
-Права перевіряються тут: редагувати й видаляти — лише автор, модерувати — лише адмін.
+Права перевіряються тут: редагувати й видаляти — лише автор, модерувати — admin чи owner,
+і лише контент та користувачів нижчої ролі (див. domain/roles.py).
 Прихований чи видалений контент для звичайних користувачів не існує (404).
 Кожна функція, що змінює дані, сама комітить сесію.
 """
@@ -19,6 +20,7 @@ from app.db.repositories import community as repo
 from app.db.repositories.community import FeedRow, TimelineScope
 from app.db.repositories.users import get_user, revoke_user_tokens, set_status
 from app.domain import (
+    AdminUserView,
     BanView,
     CommentView,
     FeedItem,
@@ -29,6 +31,8 @@ from app.domain import (
     ReportReason,
     ReportView,
     TrendingPair,
+    is_staff,
+    outranks,
 )
 
 FeedSort = Literal["new", "popular"]
@@ -68,7 +72,7 @@ class FeedPage:
 
 
 def _is_admin(user: User | None) -> bool:
-    return user is not None and user.role == UserRole.ADMIN
+    return user is not None and is_staff(user.role)
 
 
 def _encode(raw: str) -> str:
@@ -459,12 +463,25 @@ def _moderation(status: ContentStatus, admin: User) -> dict[str, Any]:
     return {"status": status, "moderated_at": datetime.now(UTC), "moderated_by_id": admin.id}
 
 
+async def _check_rank(
+    session: AsyncSession, admin: User, author_id: int, status: ContentStatus
+) -> None:
+    """Приховати чи видалити можна свій контент або контент нижчої ролі; відновити — будь-який."""
+    if status == ContentStatus.VISIBLE or author_id == admin.id:
+        return
+    author = await get_user(session, author_id)
+    if author is not None and not outranks(admin.role, author.role):
+        raise Forbidden("Контент адміністратора чи власника модерує лише старший за роллю")
+
+
 async def set_post_status(
     session: AsyncSession, admin: User, post_id: int, status: ContentStatus
 ) -> PostView:
     """Приховати, видалити чи відновити публікацію (FR-44, FR-46); відкриті скарги закриваються."""
-    if await repo.get_post(session, post_id) is None:
+    post = await repo.get_post(session, post_id)
+    if post is None:
         raise NotFound("Публікацію не знайдено")
+    await _check_rank(session, admin, post.author_id, status)
     await repo.set_post(session, post_id, _moderation(status, admin))
     await repo.resolve_reports(session, post_id, None, _verdict(status), admin.id)
     await session.commit()
@@ -476,8 +493,10 @@ async def set_comment_status(
     session: AsyncSession, admin: User, comment_id: int, status: ContentStatus
 ) -> CommentView:
     """Приховати, видалити чи відновити коментар (FR-44, FR-46)."""
-    if await repo.get_comment(session, comment_id) is None:
+    comment = await repo.get_comment(session, comment_id)
+    if comment is None:
         raise NotFound("Коментар не знайдено")
+    await _check_rank(session, admin, comment.author_id, status)
     await repo.set_comment(session, comment_id, _moderation(status, admin))
     await repo.resolve_reports(session, None, comment_id, _verdict(status), admin.id)
     await session.commit()
@@ -525,6 +544,13 @@ async def bans(session: AsyncSession, active_only: bool) -> list[BanView]:
     return await repo.ban_views(session, active_only, datetime.now(UTC))
 
 
+def _check_ban_target(admin: User, user: User) -> None:
+    if user.id == admin.id:
+        raise BadRequest("Себе заблокувати чи розблокувати не можна")
+    if not outranks(admin.role, user.role):
+        raise BadRequest("Блокувати й розблоковувати можна лише користувачів нижчої ролі")
+
+
 async def ban(
     session: AsyncSession, admin: User, user_id: int, days: int | None, reason: str
 ) -> BanView:
@@ -532,8 +558,7 @@ async def ban(
     user = await get_user(session, user_id)
     if user is None:
         raise NotFound("Користувача не знайдено")
-    if user.id == admin.id or user.role == UserRole.ADMIN:
-        raise BadRequest("Адміністратора заблокувати не можна")
+    _check_ban_target(admin, user)
     now = datetime.now(UTC)
     await repo.lift_bans(session, user.id)
     ban_id = await repo.add_ban(
@@ -559,7 +584,34 @@ async def unban(session: AsyncSession, admin: User, user_id: int) -> None:
     user = await get_user(session, user_id)
     if user is None:
         raise NotFound("Користувача не знайдено")
+    _check_ban_target(admin, user)
     await repo.lift_bans(session, user.id)
     await set_status(session, user.id, UserStatus.ACTIVE)
     await session.commit()
     log.info("community.user_unbanned", user_id=user.id, admin_id=admin.id)
+
+
+async def users(
+    session: AsyncSession, query: str | None, role: UserRole | None, limit: int
+) -> list[AdminUserView]:
+    """Користувачі для панелі адміністратора, новіші першими."""
+    return await repo.admin_user_views(session, query, role, limit)
+
+
+async def set_role(
+    session: AsyncSession, owner: User, user_id: int, role: UserRole
+) -> AdminUserView:
+    """Призначити чи зняти адміністратора. Лише owner; owner через API не призначається."""
+    user = await get_user(session, user_id)
+    if user is None:
+        raise NotFound("Користувача не знайдено")
+    if user.id == owner.id or user.role == UserRole.OWNER:
+        raise BadRequest("Роль власника змінити не можна")
+    if role == UserRole.OWNER:
+        raise BadRequest("Власника призначають лише вручну")
+    await repo.set_role(session, user.id, role)
+    await session.commit()
+    log.info("community.role_changed", user_id=user.id, role=role, owner_id=owner.id)
+    for view in await repo.admin_user_views(session, None, None, 1, user.id):
+        return view
+    raise NotFound("Користувача не знайдено")

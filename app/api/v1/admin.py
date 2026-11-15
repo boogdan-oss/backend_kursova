@@ -1,15 +1,22 @@
-"""Модерація спільноти (FR-44 – FR-46): скарги, приховування й відновлення, блокування.
-Лише для role=admin; іншим — 403."""
+"""Модерація спільноти (FR-44 – FR-46): скарги, приховування й відновлення, блокування,
+користувачі. Для admin і owner (керування ролями — лише owner); іншим — 403."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Response, status
 from pydantic import BaseModel, Field, StringConstraints
 
-from app.api.deps import AdminUser, SessionDep
+from app.api.deps import AdminUser, OwnerUser, SessionDep
 from app.api.v1.community import handled
-from app.db.models import ContentStatus, ReportStatus
-from app.domain import BanView, CommentView, ModerationStats, PostView, ReportView
+from app.db.models import ContentStatus, ReportStatus, UserRole
+from app.domain import (
+    AdminUserView,
+    BanView,
+    CommentView,
+    ModerationStats,
+    PostView,
+    ReportView,
+)
 from app.services import community_service as service
 from app.services.community_service import ReportAction
 
@@ -137,3 +144,44 @@ async def ban_user(body: BanIn, session: SessionDep, admin: AdminUser) -> BanVie
 async def unban_user(user_id: int, session: SessionDep, admin: AdminUser) -> Response:
     await handled(service.unban(session, admin, user_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class UsersResponse(BaseModel):
+    count: int
+    items: list[AdminUserView]
+
+
+class RoleIn(BaseModel):
+    role: Literal["user", "admin"] = Field(description="Власника через API не призначають")
+
+
+@router.get(
+    "/users",
+    response_model=UsersResponse,
+    summary="Користувачі: пошук і фільтр за роллю",
+    description=(
+        "query шукає за username, display_name і email без урахування регістру. "
+        "reports_against — усі скарги на публікації й коментарі користувача."
+    ),
+)
+async def list_users(
+    session: SessionDep,
+    _: AdminUser,
+    query: Annotated[str | None, Query(max_length=100)] = None,
+    role: UserRole | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> UsersResponse:
+    items = await service.users(session, query, role, limit)
+    return UsersResponse(count=len(items), items=items)
+
+
+@router.put(
+    "/users/{user_id}/role",
+    response_model=AdminUserView,
+    summary="Призначити чи зняти адміністратора (лише owner)",
+    description="Свою роль чи роль власника змінити не можна (400).",
+)
+async def change_role(
+    user_id: int, body: RoleIn, session: SessionDep, owner: OwnerUser
+) -> AdminUserView:
+    return await handled(service.set_role(session, owner, user_id, UserRole(body.role)))

@@ -10,6 +10,7 @@ from app.core.security import InvalidToken, decode_token
 from app.db.models import User, UserRole
 from app.db.repositories.users import get_user
 from app.db.session import get_session
+from app.domain.roles import is_staff
 from app.services.auth_service import AccountBlocked, ensure_active
 from app.services.market_service import PairNotFound
 
@@ -90,12 +91,22 @@ CurrentUser = Annotated[User, Depends(current_user)]
 
 
 async def require_admin(user: CurrentUser) -> User:
-    if user.role != UserRole.ADMIN:
+    """admin або owner."""
+    if not is_staff(user.role):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Потрібні права адміністратора")
     return user
 
 
 AdminUser = Annotated[User, Depends(require_admin)]
+
+
+async def require_owner(user: CurrentUser) -> User:
+    if user.role != UserRole.OWNER:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Потрібні права власника")
+    return user
+
+
+OwnerUser = Annotated[User, Depends(require_owner)]
 
 
 async def optional_user(

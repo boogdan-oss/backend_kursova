@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel
 
+from app.domain.roles import Role
+
 ContentState = Literal["visible", "hidden", "deleted"]
 ReportState = Literal["pending", "resolved", "rejected"]
 ReportReason = Literal["spam", "scam", "abuse", "misinformation", "other"]
@@ -14,6 +16,7 @@ class Author(BaseModel):
     id: int
     username: str
     is_admin: bool = False
+    role: Role = "user"
 
 
 class PairRef(BaseModel):
@@ -84,6 +87,7 @@ class ProfileView(BaseModel):
     display_name: str | None = None
     bio: str | None = None
     is_admin: bool
+    role: Role = "user"
     status: str
     joined_at: AwareDatetime
     posts: int
@@ -139,3 +143,17 @@ class ModerationStats(BaseModel):
     hidden: int
     deleted_7d: int
     banned: int
+
+
+class AdminUserView(BaseModel):
+    """Користувач у панелі адміністратора: роль, стан і сигнали для модерації."""
+
+    id: int
+    username: str
+    display_name: str | None
+    email: str
+    role: Role
+    status: str
+    created_at: AwareDatetime
+    posts: int
+    reports_against: int
