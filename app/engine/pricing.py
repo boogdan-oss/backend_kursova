@@ -99,8 +99,8 @@ def market_snapshot(
 ) -> MarketSnapshot:
     """Ефективні ціни пари на біржі. Ціна — лише за надійними продавцями, обсяг — за всіма.
 
-    Обсяг і ліміти окремо по сторонах — за надійними: з них ланцюжки перевіряють, чи
-    вкладається сума кожного кроку в оголошення.
+    Обсяг і ліміти окремо по сторонах — за надійними. Ціна не залежить від суми угоди:
+    під конкретну суму оголошення відбирає arbitrage (_evaluate, _walk).
     """
     reliable_buy, reliable_sell = filter_reliable(buy_offers), filter_reliable(sell_offers)
     buy_price = effective_price(reliable_buy)

@@ -5,18 +5,25 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from itertools import product
+from statistics import median
 
 import networkx as nx
 
 from app.domain import Deal, FeeSchedule, MarketSnapshot, Offer, Opportunity, Side, Step
 from app.engine.fees import calculate_deal, trade_fee_rate
 from app.engine.filters import filter_by_amount, filter_reliable
-from app.engine.pricing import effective_price, quantity_for, typical_amount
+from app.engine.pricing import (
+    effective_price,
+    market_snapshot,
+    quantity_for,
+    typical_amount,
+)
 from app.engine.ranking import rank_opportunities
 from app.engine.scoring import ScoreInputs, potential_loss, risk_reward, score_opportunity
 from app.engine.spreads import PERCENT_PRECISION, round_money
 
 PairKey = tuple[str, str]
+BookKey = tuple[str, str, str, Side]
 FeeMap = Mapping[str, FeeSchedule]
 
 DEFAULT_ADVERSE_MOVE_PCT = Decimal("0.5")
@@ -206,8 +213,35 @@ def find_opportunities(
     return rank_opportunities([item for item in evaluated if is_actionable(item)])
 
 
+def _books(offers: Iterable[Offer]) -> dict[BookKey, list[Offer]]:
+    """Оголошення надійних продавців по (біржа, актив, фіат, сторона)."""
+    books: dict[BookKey, list[Offer]] = defaultdict(list)
+    for offer in filter_reliable(list(offers)):
+        books[offer.exchange, offer.asset, offer.fiat, offer.side].append(offer)
+    return books
+
+
+def _quotes(books: Mapping[BookKey, list[Offer]], detected_at: datetime) -> list[MarketSnapshot]:
+    markets = sorted({key[:3] for key in books})
+    return [
+        market_snapshot(
+            exchange,
+            asset,
+            fiat,
+            books.get((exchange, asset, fiat, "BUY"), []),
+            books.get((exchange, asset, fiat, "SELL"), []),
+            detected_at,
+        )
+        for exchange, asset, fiat in markets
+    ]
+
+
 def _build_graph(quotes: Iterable[MarketSnapshot], fees: FeeMap) -> nx.DiGraph:
-    """Вершини (біржа, актив) і (bank, фіат), вага ребра — −log(курс)."""
+    """Вершини (біржа, актив) і (bank, фіат), вага ребра — −log(курс).
+
+    Курс тут — без урахування суми угоди: граф лише відбирає кандидатів, а ціну кожного
+    кроку під його суму рахує _walk.
+    """
     graph = nx.DiGraph()
     holders: dict[str, set[str]] = defaultdict(set)
     for quote in quotes:
@@ -216,14 +250,10 @@ def _build_graph(quotes: Iterable[MarketSnapshot], fees: FeeMap) -> nx.DiGraph:
         holders[quote.asset].add(quote.exchange)
         if quote.buy_price is not None and quote.offers_count_buy >= MIN_MARKET_OFFERS:
             weight = math.log(quote.buy_price * (1 + rate))
-            graph.add_edge(
-                bank, coin, weight=weight, action="BUY", quote=quote, price=quote.buy_price
-            )
+            graph.add_edge(bank, coin, weight=weight, action="BUY", quote=quote)
         if quote.sell_price is not None and quote.offers_count_sell >= MIN_MARKET_OFFERS:
             weight = -math.log(quote.sell_price * (1 - rate))
-            graph.add_edge(
-                coin, bank, weight=weight, action="SELL", quote=quote, price=quote.sell_price
-            )
+            graph.add_edge(coin, bank, weight=weight, action="SELL", quote=quote)
 
     for asset, exchanges in holders.items():
         for source, target in product(exchanges, repeat=2):
@@ -233,20 +263,42 @@ def _build_graph(quotes: Iterable[MarketSnapshot], fees: FeeMap) -> nx.DiGraph:
 
 
 @dataclass(frozen=True, slots=True)
+class _Leg:
+    price: Decimal
+    available: Decimal
+    offers_count: int
+
+
+def _leg(book: list[Offer], fiat_amount: Decimal) -> _Leg | None:
+    """Ціна кроку — лише за оголошеннями, що приймають саме таку суму (як у _evaluate)."""
+    usable = filter_by_amount(book, fiat_amount)
+    price = effective_price(usable)
+    if price is None or len(usable) < MIN_MARKET_OFFERS:
+        return None
+    return _Leg(price, sum((offer.available for offer in usable), Decimal(0)), len(usable))
+
+
+@dataclass(frozen=True, slots=True)
 class _Walk:
     net: Decimal
     gross: Decimal
     steps: list[Step]
     capacity: Decimal
+    offers_count: int
 
 
 def _walk(
-    graph: nx.DiGraph, cycle: list[tuple[str, str]], fees: FeeMap, investment: Decimal
+    graph: nx.DiGraph,
+    books: Mapping[BookKey, list[Offer]],
+    cycle: list[tuple[str, str]],
+    fees: FeeMap,
+    investment: Decimal,
 ) -> _Walk | None:
-    """Проходить цикл у Decimal. None — якась ланка не витримує такого обсягу."""
+    """Проходить цикл у Decimal. None — якась ланка не витримує такої суми чи обсягу."""
     net = gross = investment
     first_quantity = Decimal(0)
     capacity = Decimal("Infinity")
+    offers_count = 0
     steps = []
     for source, target in zip(cycle, cycle[1:], strict=False):
         edge = graph.edges[source, target]
@@ -268,48 +320,92 @@ def _walk(
             )
             continue
 
-        quote, price = edge["quote"], edge["price"]
+        quote = edge["quote"]
+        book = books[quote.exchange, quote.asset, quote.fiat, action]
         rate = trade_fee_rate(fees[quote.exchange])
-        before = net
+        before = held = net
         if action == "BUY":
-            net, gross = net / (price * (1 + rate)), gross / price
+            leg = _leg(book, before)
+            if leg is None:
+                return None
+            net, gross = net / (leg.price * (1 + rate)), gross / leg.price
             first_quantity = first_quantity or net
-            held, fiat_amount = net, before
-            available, limits = quote.buy_volume, (quote.buy_min_amount, quote.buy_max_amount)
-        else:
             held = net
-            net, gross = net * price * (1 - rate), gross * price
-            fiat_amount = net
-            available, limits = quote.sell_volume, (quote.sell_min_amount, quote.sell_max_amount)
-        available = quote.volume if available is None else available
-        if held > available or not _within(fiat_amount, *limits):
+        else:
+            estimate = effective_price(book)
+            leg = None if estimate is None else _leg(book, before * estimate)
+            if leg is None:
+                return None
+            net, gross = net * leg.price * (1 - rate), gross * leg.price
+        if held > leg.available:
             return None
-        capacity = min(capacity, available * first_quantity / held)
+        capacity = min(capacity, leg.available * first_quantity / held)
+        offers_count = min(offers_count, leg.offers_count) if offers_count else leg.offers_count
         steps.append(
             Step(
                 exchange=quote.exchange,
                 action=action,
                 asset=quote.asset,
                 fiat=quote.fiat,
-                price=price,
+                price=leg.price,
                 amount_in=_amount(before),
                 amount_out=_amount(net),
             )
         )
-    return _Walk(net, gross, steps, capacity)
+    return _Walk(net, gross, steps, capacity, offers_count)
 
 
 def _amount(value: Decimal) -> Decimal:
     return value.quantize(AMOUNT_PRECISION)
 
 
-def _within(amount: Decimal, low: Decimal | None, high: Decimal | None) -> bool:
-    """Сума кроку вкладається в ліміти хоча б одного надійного оголошення."""
-    return (low is None or amount >= low) and (high is None or amount <= high)
+def _market_prices(quotes: Iterable[MarketSnapshot]) -> dict[PairKey, Decimal]:
+    """Ринкова ціна пари — медіана ефективних цін обох сторін на всіх біржах."""
+    prices: dict[PairKey, list[Decimal]] = defaultdict(list)
+    for quote in quotes:
+        pair = (quote.asset, quote.fiat)
+        if quote.buy_price is not None and quote.offers_count_buy >= MIN_MARKET_OFFERS:
+            prices[pair].append(quote.buy_price)
+        if quote.sell_price is not None and quote.offers_count_sell >= MIN_MARKET_OFFERS:
+            prices[pair].append(quote.sell_price)
+    return {pair: median(values) for pair, values in prices.items()}
+
+
+def _has_off_market_step(steps: list[Step], market: Mapping[PairKey, Decimal]) -> bool:
+    """Крок, ціна якого відходить від ринку своєї пари більш ніж на поріг аномалії.
+
+    Живий випадок: продаж USDT по 1.20 USD і продаж USDC по 41 UAH (ринок — 47) разом
+    давали +3.9 %, хоча кожен крок окремо нереальний.
+    """
+    for step in steps:
+        if step.price is None or step.fiat is None:
+            continue
+        reference = market.get((step.asset, step.fiat))
+        if reference and abs(step.price / reference - 1) * 100 > ANOMALY_SPREAD_PCT:
+            return True
+    return False
+
+
+def _has_anomalous_pair(steps: list[Step]) -> bool:
+    """Продаж і купівля одного активу за один фіат усередині ланцюжка з аномальним спредом.
+
+    Такий розрив сам по собі — ознака нереальних цін (як у find_opportunities), а збиткові
+    кроки навколо лише ховають його під загальним порогом циклу.
+    """
+    trades = [step for step in steps if step.price is not None and step.fiat is not None]
+    for sell, buy in product(trades, repeat=2):
+        if sell.action != "SELL" or buy.action != "BUY":
+            continue
+        if (sell.asset, sell.fiat) != (buy.asset, buy.fiat):
+            continue
+        assert sell.price is not None and buy.price is not None
+        if (sell.price / buy.price - 1) * 100 > ANOMALY_SPREAD_PCT:
+            return True
+    return False
 
 
 def find_chains(
-    quotes: Iterable[MarketSnapshot],
+    offers: Iterable[Offer],
     fees: FeeMap,
     fiat: str,
     investment: Decimal,
@@ -318,10 +414,14 @@ def find_chains(
 ) -> list[Opportunity]:
     """Цикли від fiat і назад до нього через кілька активів чи фіатів.
 
-    Ціни різних фіатів тут не порівнюються: кожна ланка — окрема реальна угода своєї пари.
+    Ціни різних фіатів тут не порівнюються: кожна ланка — окрема реальна угода своєї пари,
+    і її ціна береться лише з оголошень, у ліміти яких вкладається сума цього кроку.
     Цикли з одним активом і одним фіатом не потрапляють сюди: це спред або міжбіржовий арбітраж.
     """
+    books = _books(offers)
+    quotes = _quotes(books, detected_at)
     graph = _build_graph(quotes, fees)
+    market = _market_prices(quotes)
     start = (BANK, fiat)
     if start not in graph:
         return []
@@ -336,20 +436,19 @@ def find_chains(
             fiats = {node[1] for node in path if node[0] == BANK}
             if len(assets) < 2 and len(fiats) < 2:
                 continue
-            walked = _walk(graph, cycle, fees, investment)
+            walked = _walk(graph, books, cycle, fees, investment)
             if walked is None or walked.net <= investment:
                 continue
             spread = ((walked.gross / investment - 1) * 100).quantize(PERCENT_PRECISION)
-            if spread > ANOMALY_SPREAD_PCT:
+            if (
+                spread > ANOMALY_SPREAD_PCT
+                or _has_anomalous_pair(walked.steps)
+                or _has_off_market_step(walked.steps, market)
+            ):
                 continue
 
             buy, sell = walked.steps[0], walked.steps[-1]
             assert buy.price is not None and sell.price is not None
-            legs = [
-                graph.edges[source, target]["quote"]
-                for source, target in zip(cycle, cycle[1:], strict=False)
-                if "quote" in graph.edges[source, target]
-            ]
             profit = walked.net - investment
             net_spread = ((walked.net / investment - 1) * 100).quantize(PERCENT_PRECISION)
             rr = risk_reward(
@@ -375,9 +474,7 @@ def find_chains(
                     ai_score=score_opportunity(
                         ScoreInputs(
                             net_spread_pct=net_spread,
-                            offers_count=min(
-                                min(leg.offers_count_buy, leg.offers_count_sell) for leg in legs
-                            ),
+                            offers_count=walked.offers_count,
                             volume_ratio=walked.capacity / first_quantity,
                             rr=rr,
                             stability_pct=None,

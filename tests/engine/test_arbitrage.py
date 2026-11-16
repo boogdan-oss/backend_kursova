@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from app.domain import FeeSchedule, MarketSnapshot, Offer, Opportunity, Side
+from app.domain import FeeSchedule, Offer, Opportunity, Side
 from app.engine.arbitrage import (
     ANOMALY_SPREAD_PCT,
     MIN_MARKET_OFFERS,
@@ -313,131 +313,6 @@ def test_best_opportunity_goes_first() -> None:
     assert [item.sell_exchange for item in found] == ["bybit", "okx"]
 
 
-def snapshot(
-    exchange: str,
-    asset: str,
-    fiat: str,
-    buy: str | None,
-    sell: str | None,
-    volume: str = "100000",
-    offers: int = MIN_MARKET_OFFERS,
-) -> MarketSnapshot:
-    return MarketSnapshot(
-        exchange=exchange,
-        asset=asset,
-        fiat=fiat,
-        buy_price=None if buy is None else Decimal(buy),
-        sell_price=None if sell is None else Decimal(sell),
-        volume=Decimal(volume),
-        offers_count_buy=offers,
-        offers_count_sell=offers,
-        fetched_at=NOW,
-    )
-
-
-PROFITABLE_LOOP = [
-    snapshot("binance", "USDT", "UAH", "41.00", "40.50"),
-    snapshot("binance", "USDT", "EUR", "0.97", "0.95"),
-    snapshot("binance", "USDC", "EUR", "0.93", "0.90"),
-    snapshot("binance", "USDC", "UAH", "42.00", "41.50"),
-]
-
-
-def test_chain_closes_on_starting_fiat_with_profit() -> None:
-    found = find_chains(PROFITABLE_LOOP, FEES, "UAH", Decimal(20000), NOW)
-
-    assert found
-    best = found[0]
-    assert best.kind == "chain"
-    assert best.fiat == "UAH"
-    assert best.net_spread_pct > 0
-    assert best.estimated_profit > 0
-    assert [step.action for step in best.steps] == ["BUY", "SELL", "BUY", "SELL"]
-    assert [step.asset for step in best.steps] == ["USDT", "USDT", "USDC", "USDC"]
-    assert round(best.estimated_profit) == 679
-
-
-def test_chain_is_limited_by_max_steps() -> None:
-    assert find_chains(PROFITABLE_LOOP, FEES, "UAH", Decimal(20000), NOW, max_steps=3) == []
-
-
-def test_unprofitable_loop_gives_no_chain() -> None:
-    loop = [
-        snapshot("binance", "USDT", "UAH", "41.00", "40.50"),
-        snapshot("binance", "USDT", "EUR", "0.97", "0.90"),
-        snapshot("binance", "USDC", "EUR", "0.97", "0.90"),
-        snapshot("binance", "USDC", "UAH", "42.00", "40.00"),
-    ]
-
-    assert find_chains(loop, FEES, "UAH", Decimal(20000), NOW) == []
-
-
-def test_plain_cross_exchange_is_not_reported_as_chain() -> None:
-    quotes = [
-        snapshot("binance", "USDT", "UAH", "41.00", "40.50"),
-        snapshot("bybit", "USDT", "UAH", "42.50", "41.80"),
-    ]
-
-    assert find_chains(quotes, FEES, "UAH", Decimal(20000), NOW) == []
-
-
-def test_chain_with_transfer_pays_withdrawal_fee() -> None:
-    loop = [
-        snapshot("binance", "USDT", "UAH", "41.00", "40.50"),
-        snapshot("bybit", "USDT", "EUR", "0.97", "0.95"),
-        snapshot("bybit", "USDC", "EUR", "0.93", "0.90"),
-        snapshot("bybit", "USDC", "UAH", "42.00", "41.50"),
-    ]
-    fees = {name: item.model_copy() for name, item in FEES.items()}
-    fees["binance"] = FEES["binance"].model_copy(update={"withdrawal_fees": {"USDT": Decimal(5)}})
-
-    (found,) = find_chains(loop, fees, "UAH", Decimal(20000), NOW, max_steps=5)
-
-    assert [step.action for step in found.steps] == ["BUY", "TRANSFER", "SELL", "BUY", "SELL"]
-    assert found.estimated_profit < 679
-
-
-def test_chain_skips_market_without_enough_volume() -> None:
-    thin = [*PROFITABLE_LOOP[:3], snapshot("binance", "USDC", "UAH", "42.00", "41.50", "10")]
-
-    assert find_chains(thin, FEES, "UAH", Decimal(20000), NOW) == []
-
-
-def test_chain_ignores_thin_market() -> None:
-    thin = [
-        *PROFITABLE_LOOP[:3],
-        snapshot("binance", "USDC", "UAH", "42.00", "41.50", offers=MIN_MARKET_OFFERS - 1),
-    ]
-
-    assert find_chains(thin, FEES, "UAH", Decimal(20000), NOW) == []
-
-
-def test_anomalous_chain_is_not_recommended() -> None:
-    """Живий випадок: цикл через тонкий ринок із нереальними цінами давав +32 %."""
-    loop = [*PROFITABLE_LOOP[:3], snapshot("binance", "USDC", "UAH", "42.00", "55.00")]
-
-    assert find_chains(loop, FEES, "UAH", Decimal(20000), NOW) == []
-
-
-def test_chain_max_volume_is_measured_in_first_asset() -> None:
-    loop = [
-        snapshot("binance", "USDT", "UAH", "41.00", "40.50", "5000"),
-        snapshot("binance", "USDT", "EUR", "0.97", "0.95", "5000"),
-        snapshot("binance", "USDC", "EUR", "0.93", "0.90", "1000"),
-        snapshot("binance", "USDC", "UAH", "42.00", "41.50", "5000"),
-    ]
-
-    (found,) = find_chains(loop, FEES, "UAH", Decimal(20000), NOW)
-
-    assert round(found.max_volume) == 979
-
-
-def test_chain_ignores_side_without_price() -> None:
-    missing = [*PROFITABLE_LOOP[:3], snapshot("binance", "USDC", "UAH", None, None)]
-
-    assert find_chains(missing, FEES, "UAH", Decimal(20000), NOW) == []
-
-
 def test_cross_exchange_steps_show_what_you_give_and_get() -> None:
     offers = [
         offer("binance", "BUY", "41.00"),
@@ -457,8 +332,196 @@ def test_cross_exchange_steps_show_what_you_give_and_get() -> None:
     assert sell.amount_out - Decimal(20000) == pytest.approx(found.estimated_profit, abs=1)
 
 
+def market(
+    exchange: str,
+    asset: str,
+    fiat: str,
+    buy: str | None,
+    sell: str | None,
+    volume: str = "100000",
+    offers: int = MIN_MARKET_OFFERS,
+    buy_volume: str | None = None,
+    sell_volume: str | None = None,
+    **limits: str,
+) -> list[Offer]:
+    """Ринок пари на біржі: offers однакових оголошень на кожну сторону з ціною."""
+    result = []
+    for side, price, total in (("BUY", buy, buy_volume), ("SELL", sell, sell_volume)):
+        if price is None:
+            continue
+        prefix = side.lower() + "_"
+        side_limits = {
+            key.removeprefix(prefix): value
+            for key, value in limits.items()
+            if key.startswith(prefix)
+        }
+        available = str(Decimal(total or volume) / offers)
+        result.extend(
+            offer(exchange, side, price, fiat=fiat, asset=asset, available=available, **side_limits)
+            for _ in range(offers)
+        )
+    return result
+
+
+def chains(*markets: list[Offer], **kwargs: Any) -> list[Opportunity]:
+    fees = kwargs.pop("fees", FEES)
+    offers = [item for group in markets for item in group]
+    return find_chains(offers, fees, "UAH", Decimal(20000), NOW, **kwargs)
+
+
+PROFITABLE_LOOP = (
+    market("binance", "USDT", "UAH", "41.00", "40.50"),
+    market("binance", "USDT", "EUR", "0.97", "0.95"),
+    market("binance", "USDC", "EUR", "0.93", "0.90"),
+    market("binance", "USDC", "UAH", "42.00", "41.50"),
+)
+
+
+def test_chain_closes_on_starting_fiat_with_profit() -> None:
+    found = chains(*PROFITABLE_LOOP)
+
+    assert found
+    best = found[0]
+    assert best.kind == "chain"
+    assert best.fiat == "UAH"
+    assert best.net_spread_pct > 0
+    assert best.estimated_profit > 0
+    assert [step.action for step in best.steps] == ["BUY", "SELL", "BUY", "SELL"]
+    assert [step.asset for step in best.steps] == ["USDT", "USDT", "USDC", "USDC"]
+    assert round(best.estimated_profit) == 679
+
+
+def test_chain_is_limited_by_max_steps() -> None:
+    assert chains(*PROFITABLE_LOOP, max_steps=3) == []
+
+
+def test_unprofitable_loop_gives_no_chain() -> None:
+    assert (
+        chains(
+            market("binance", "USDT", "UAH", "41.00", "40.50"),
+            market("binance", "USDT", "EUR", "0.97", "0.90"),
+            market("binance", "USDC", "EUR", "0.97", "0.90"),
+            market("binance", "USDC", "UAH", "42.00", "40.00"),
+        )
+        == []
+    )
+
+
+def test_plain_cross_exchange_is_not_reported_as_chain() -> None:
+    assert (
+        chains(
+            market("binance", "USDT", "UAH", "41.00", "40.50"),
+            market("bybit", "USDT", "UAH", "42.50", "41.80"),
+        )
+        == []
+    )
+
+
+def test_chain_with_transfer_pays_withdrawal_fee() -> None:
+    fees = {name: item.model_copy() for name, item in FEES.items()}
+    fees["binance"] = FEES["binance"].model_copy(update={"withdrawal_fees": {"USDT": Decimal(5)}})
+
+    (found,) = chains(
+        market("binance", "USDT", "UAH", "41.00", "40.50"),
+        market("bybit", "USDT", "EUR", "0.97", "0.95"),
+        market("bybit", "USDC", "EUR", "0.93", "0.90"),
+        market("bybit", "USDC", "UAH", "42.00", "41.50"),
+        fees=fees,
+        max_steps=5,
+    )
+
+    assert [step.action for step in found.steps] == ["BUY", "TRANSFER", "SELL", "BUY", "SELL"]
+    assert found.estimated_profit < 679
+
+
+def test_chain_skips_market_without_enough_volume() -> None:
+    thin = market("binance", "USDC", "UAH", "42.00", "41.50", "10")
+
+    assert chains(*PROFITABLE_LOOP[:3], thin) == []
+
+
+def test_chain_ignores_thin_market() -> None:
+    thin = market("binance", "USDC", "UAH", "42.00", "41.50", offers=MIN_MARKET_OFFERS - 1)
+
+    assert chains(*PROFITABLE_LOOP[:3], thin) == []
+
+
+def test_anomalous_chain_is_not_recommended() -> None:
+    """Живий випадок: цикл через тонкий ринок із нереальними цінами давав +32 %."""
+    anomalous = market("binance", "USDC", "UAH", "42.00", "55.00")
+
+    assert chains(*PROFITABLE_LOOP[:3], anomalous) == []
+
+
+def test_chain_hiding_anomalous_spread_inside_is_not_recommended() -> None:
+    """Живий випадок: UAH → USDT → BDT → USDT → UAH давав +4.98 %.
+
+    Уся вигода — розрив 5.4 % між продажем USDT за BDT на одній біржі й купівлею на іншій,
+    а збиткові UAH-кроки опускали цикл під загальний поріг аномалії.
+    """
+    loop = (
+        market("bybit", "USDT", "UAH", "41.00", None),
+        market("bybit", "USDT", "BDT", None, "137"),
+        market("okx", "USDT", "BDT", "130", None),
+        market("okx", "USDT", "UAH", None, "39.50"),
+    )
+
+    assert chains(*loop) == []
+    normal = (*loop[:1], market("bybit", "USDT", "BDT", None, "133"), loop[2])
+    assert chains(*normal, market("okx", "USDT", "UAH", None, "40.50"))
+
+
+def test_chain_with_step_far_from_its_market_is_not_recommended() -> None:
+    """Живий випадок: продаж USDT по 1.20 USD і USDC по 41 UAH разом давали +3.9 %."""
+    loop = (
+        market("binance", "USDT", "UAH", "41.00", "40.50"),
+        market("binance", "USDT", "EUR", None, "1.10"),
+        market("okx", "USDT", "EUR", "0.97", "0.95"),
+        market("bybit", "USDT", "EUR", "0.97", "0.95"),
+        market("binance", "USDC", "EUR", "0.93", "0.90"),
+        market("binance", "USDC", "UAH", "42.00", "36.00"),
+        market("okx", "USDC", "UAH", "42.00", "41.50"),
+        market("bybit", "USDC", "UAH", "42.00", "41.50"),
+    )
+
+    assert chains(*loop) == []
+
+
+def test_chain_prices_step_by_offers_that_accept_its_amount() -> None:
+    """Дрібні лоти з кращою ціною не приймають суму кроку й не впливають на ціну."""
+    tiny = market("binance", "USDT", "UAH", "38.00", None, buy_max_amount="500")
+
+    (found,) = chains(*PROFITABLE_LOOP, tiny)
+
+    assert found.steps[0].price == Decimal("41.00")
+    assert round(found.estimated_profit) == 679
+
+
+def test_chain_step_without_offers_for_its_amount_gives_nothing() -> None:
+    small_only = market("binance", "USDT", "UAH", "41.00", "40.50", buy_max_amount="500")
+
+    assert chains(small_only, *PROFITABLE_LOOP[1:]) == []
+
+
+def test_chain_max_volume_is_measured_in_first_asset() -> None:
+    (found,) = chains(
+        market("binance", "USDT", "UAH", "41.00", "40.50", "5000"),
+        market("binance", "USDT", "EUR", "0.97", "0.95", "5000"),
+        market("binance", "USDC", "EUR", "0.93", "0.90", "1000"),
+        market("binance", "USDC", "UAH", "42.00", "41.50", "5000"),
+    )
+
+    assert round(found.max_volume) == 979
+
+
+def test_chain_ignores_side_without_price() -> None:
+    missing = market("binance", "USDC", "UAH", None, None)
+
+    assert chains(*PROFITABLE_LOOP[:3], missing) == []
+
+
 def test_chain_steps_name_every_currency_and_amount() -> None:
-    (best, *_) = find_chains(PROFITABLE_LOOP, FEES, "UAH", Decimal(20000), NOW)
+    (best, *_) = chains(*PROFITABLE_LOOP)
 
     assert [step.fiat for step in best.steps] == ["UAH", "EUR", "EUR", "UAH"]
     assert best.steps[0].amount_in == Decimal(20000)
@@ -469,40 +532,22 @@ def test_chain_steps_name_every_currency_and_amount() -> None:
     )
 
 
-def limited(
-    exchange: str, asset: str, fiat: str, buy: str, sell: str, **limits: str
-) -> MarketSnapshot:
-    return snapshot(exchange, asset, fiat, buy, sell).model_copy(
-        update={key: Decimal(value) for key, value in limits.items()}
-    )
-
-
 def test_chain_step_must_fit_offer_limits() -> None:
-    too_small_for_eur_offers = [
-        *PROFITABLE_LOOP[:2],
-        limited("binance", "USDC", "EUR", "0.93", "0.90", buy_min_amount="1000"),
-        PROFITABLE_LOOP[3],
-    ]
+    eur_offers = market("binance", "USDC", "EUR", "0.93", "0.90", buy_min_amount="1000")
 
-    assert find_chains(too_small_for_eur_offers, FEES, "UAH", Decimal(20000), NOW) == []
-    fits = [
-        *PROFITABLE_LOOP[:2],
-        limited(
-            "binance", "USDC", "EUR", "0.93", "0.90", buy_min_amount="10", buy_max_amount="900"
-        ),
-        PROFITABLE_LOOP[3],
-    ]
-    assert find_chains(fits, FEES, "UAH", Decimal(20000), NOW)
+    assert chains(*PROFITABLE_LOOP[:2], eur_offers, PROFITABLE_LOOP[3]) == []
+    fits = market(
+        "binance", "USDC", "EUR", "0.93", "0.90", buy_min_amount="10", buy_max_amount="900"
+    )
+    assert chains(*PROFITABLE_LOOP[:2], fits, PROFITABLE_LOOP[3])
 
 
 def test_chain_volume_uses_the_side_it_trades() -> None:
-    loop = [
-        snapshot("binance", "USDT", "UAH", "41.00", "40.50", "5000"),
-        snapshot("binance", "USDT", "EUR", "0.97", "0.95", "5000"),
-        limited("binance", "USDC", "EUR", "0.93", "0.90", buy_volume="1000", sell_volume="1"),
-        snapshot("binance", "USDC", "UAH", "42.00", "41.50", "5000"),
-    ]
-
-    (found,) = find_chains(loop, FEES, "UAH", Decimal(20000), NOW)
+    (found,) = chains(
+        market("binance", "USDT", "UAH", "41.00", "40.50", "5000"),
+        market("binance", "USDT", "EUR", "0.97", "0.95", "5000"),
+        market("binance", "USDC", "EUR", "0.93", "0.90", buy_volume="1000", sell_volume="1"),
+        market("binance", "USDC", "UAH", "42.00", "41.50", "5000"),
+    )
 
     assert round(found.max_volume) == 979

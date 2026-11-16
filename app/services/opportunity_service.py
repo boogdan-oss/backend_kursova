@@ -1,6 +1,5 @@
 import asyncio
-from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -24,7 +23,6 @@ from app.db.session import SessionLocal
 from app.domain import (
     Deal,
     FeeSchedule,
-    MarketSnapshot,
     Offer,
     Opportunity,
     OpportunityEvent,
@@ -47,7 +45,6 @@ from app.engine.pricing import (
     Fill,
     effective_price,
     fill_order,
-    market_snapshot,
     quantity_for,
     typical_amount,
 )
@@ -102,26 +99,6 @@ async def _load_risks(
     }
 
 
-def _snapshots(offers: Iterable[Offer], now: datetime) -> list[MarketSnapshot]:
-    """Котирування для графа ланцюжків. Лише надійні продавці: у кількості й обсязі теж."""
-    sides: dict[tuple[str, str, str], dict[Side, list[Offer]]] = defaultdict(
-        lambda: {"BUY": [], "SELL": []}
-    )
-    for offer in offers:
-        sides[offer.exchange, offer.asset, offer.fiat][offer.side].append(offer)
-    return [
-        market_snapshot(
-            exchange,
-            asset,
-            fiat,
-            filter_reliable(side["BUY"]),
-            filter_reliable(side["SELL"]),
-            now,
-        )
-        for (exchange, asset, fiat), side in sides.items()
-    ]
-
-
 def _chains_for(
     offers: list[Offer],
     fees: dict[str, FeeSchedule],
@@ -134,7 +111,7 @@ def _chains_for(
     )
     if amount is None:
         return []
-    return find_chains(_snapshots(offers, now), fees, fiat, amount, now)
+    return find_chains(offers, fees, fiat, amount, now)
 
 
 async def get_opportunities(
