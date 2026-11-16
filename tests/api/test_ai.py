@@ -131,3 +131,19 @@ async def test_gemini_errors_become_sse_errors(
     response = await client.post(URL, json=QUESTION)
 
     assert events(response.text) == [("error", {"detail": detail})]
+
+
+async def test_rejected_gemini_key_is_named(
+    client: AsyncClient, assistant: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def failing_chat(history: Any) -> AsyncIterator[ChatEvent]:
+        raise genai_errors.APIError(401, {"error": {"message": "x", "status": "UNAUTHENTICATED"}})
+        yield ChatEvent("text", {"text": ""})
+
+    monkeypatch.setattr(ai_module, "chat", failing_chat)
+
+    response = await client.post(URL, json=QUESTION)
+
+    assert events(response.text) == [
+        ("error", {"detail": "AI-асистент не налаштований: ключ Gemini недійсний"})
+    ]

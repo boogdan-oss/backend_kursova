@@ -64,6 +64,16 @@ class FakePubSub:
         while True:
             yield await self._queue.get()
 
+    async def get_message(self, **options: Any) -> dict[str, Any] | None:
+        """Як у redis-py: options — ignore_subscribe_messages і timeout."""
+        try:
+            message = await asyncio.wait_for(self._queue.get(), options.get("timeout"))
+        except TimeoutError:
+            return None
+        if options.get("ignore_subscribe_messages") and message["type"] == "subscribe":
+            return None
+        return message
+
 
 class FakeRedis:
     def __init__(self) -> None:
@@ -115,6 +125,9 @@ class FakeRedis:
 
     def pubsub(self) -> FakePubSub:
         return FakePubSub(self)
+
+    async def aclose(self) -> None:
+        return None
 
     async def until_subscribed(self, channel: str) -> None:
         for _ in range(100):

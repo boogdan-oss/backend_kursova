@@ -20,7 +20,6 @@ class User(TimestampMixin, Base):
     status: Mapped[UserStatus] = mapped_column(str_enum(UserStatus), default=UserStatus.ACTIVE)
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
     telegram_chat_id: Mapped[str | None] = mapped_column(String(64))
-    google_sub: Mapped[str | None] = mapped_column(String(64), unique=True)
     display_name: Mapped[str | None] = mapped_column(String(64))
     bio: Mapped[str | None] = mapped_column(String(300))
     notify_email: Mapped[str | None] = mapped_column(String(255))

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from redis.exceptions import RedisError
 
 from app.domain import EventType
-from app.pubsub import get_redis, listen_events
+from app.pubsub import listen_events, subscriber_redis
 
 ANY = "*"
 CLIENT_QUEUE_SIZE = 256
@@ -126,11 +126,24 @@ class MarketHub:
 
 
 async def relay_events(hub: MarketHub) -> None:
-    """Слухає market:updates до скасування; після збою Redis підписується знову."""
+    """Слухає market:updates до скасування; після збою Redis підписується знову
+    через нове з'єднання. Збій пишеться в лог один раз, відновлення — теж."""
+    failing = False
     while True:
+        redis = subscriber_redis()
         try:
-            async for raw in listen_events(get_redis()):
+            async for raw in listen_events(redis):
+                if failing:
+                    log.info("ws.relay_restored")
+                    failing = False
                 hub.dispatch(raw)
         except (RedisError, OSError) as exc:
-            log.warning("ws.relay_failed", error=repr(exc))
+            if not failing:
+                log.warning("ws.relay_failed", error=repr(exc))
+            failing = True
+        finally:
+            try:
+                await redis.aclose()
+            except (RedisError, OSError):
+                pass
         await asyncio.sleep(RECONNECT_PAUSE_SEC)

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from app.ai.llm.client import AssistantDisabled, assistant_provider
 from app.api.deps import CODE_PATTERN, CurrentUser, SessionDep
-from app.api.v1.ai import BUSY, UNAVAILABLE, within_limit
+from app.api.v1.ai import BUSY, UNAVAILABLE, gemini_detail, within_limit
 from app.db.models import AssistantConversation, AssistantMessage
 from app.services import assistant_service as service
 from app.services.ai_service import chat
@@ -155,10 +155,13 @@ async def send_message(body: ChatRequest, session: SessionDep, user: CurrentUser
     except AssistantFailed as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
     except gemini_errors.APIError as exc:
-        log.error("assistant.gemini_error", status=exc.code, error=exc.status)
-        busy = exc.code in (429, 503)
-        code = status.HTTP_503_SERVICE_UNAVAILABLE if busy else status.HTTP_502_BAD_GATEWAY
-        raise HTTPException(code, BUSY if busy else UNAVAILABLE) from exc
+        detail = gemini_detail(exc)
+        code = (
+            status.HTTP_502_BAD_GATEWAY
+            if detail == UNAVAILABLE
+            else status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+        raise HTTPException(code, detail) from exc
     except anthropic.RateLimitError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, BUSY) from exc
     except anthropic.APIError as exc:

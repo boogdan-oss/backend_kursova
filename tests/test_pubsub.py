@@ -44,11 +44,14 @@ async def test_listen_yields_only_messages() -> None:
             received.append(message)
 
     task = asyncio.create_task(consume())
-    await asyncio.sleep(0)
+    await redis.until_subscribed(MARKET_UPDATES)
     await redis.publish(MARKET_UPDATES, "first")
     await redis.publish("other:channel", "ignored")
     await redis.publish(MARKET_UPDATES, "second")
-    await asyncio.sleep(0)
+    for _ in range(100):
+        if len(received) == 2:
+            break
+        await asyncio.sleep(0.01)
     task.cancel()
 
     assert received == ["first", "second"]

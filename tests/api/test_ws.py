@@ -39,7 +39,7 @@ def opportunity_event(asset: str = "USDT", fiat: str = "UAH") -> str:
 @pytest.fixture
 def redis(monkeypatch: pytest.MonkeyPatch) -> FakeRedis:
     fake = FakeRedis()
-    monkeypatch.setattr(market_stream, "get_redis", lambda: fake)
+    monkeypatch.setattr(market_stream, "subscriber_redis", lambda: fake)
     return fake
 
 

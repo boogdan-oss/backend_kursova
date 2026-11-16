@@ -1,6 +1,6 @@
 import pytest
 
-from app.api.v1 import ai, auth, me
+from app.api.v1 import ai, me
 from app.services import (
     alert_service,
     auth_service,
@@ -22,7 +22,6 @@ def redis(monkeypatch: pytest.MonkeyPatch) -> FakeRedis:
         auth_service,
         alert_service,
         me,
-        auth,
         ai,
     )
     for module in modules:

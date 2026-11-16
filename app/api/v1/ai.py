@@ -22,6 +22,23 @@ router = APIRouter(tags=["ai"])
 RATE_KEY = "ai:chat:{user_id}:{hour}"
 BUSY = "Асистент перевантажений, спробуйте за хвилину"
 UNAVAILABLE = "Асистент тимчасово недоступний"
+KEY_REJECTED = "AI-асистент не налаштований: ключ Gemini недійсний"
+KEY_ERROR_CODES = (401, 403)
+
+
+def gemini_detail(exc: gemini_errors.APIError) -> str:
+    """Текст для користувача; відмову ключа видно в лозі окремою подією."""
+    if exc.code in KEY_ERROR_CODES:
+        log.error(
+            "assistant.gemini_key_rejected",
+            status=exc.code,
+            hint="перевірте GEMINI_API_KEY у серверному .env: ключ з aistudio.google.com, "
+            "без лапок і \r; після зміни перестворіть контейнер api",
+        )
+        return KEY_REJECTED
+    log.error("assistant.gemini_error", status=exc.code, error=exc.status)
+    return BUSY if exc.code in (429, 503) else UNAVAILABLE
+
 
 log = structlog.get_logger()
 
@@ -68,8 +85,7 @@ async def _stream(turns: list[ChatTurn]) -> AsyncIterator[str]:
         async for event in chat(turns):
             yield _sse(event.kind, event.data)
     except gemini_errors.APIError as exc:
-        log.error("assistant.gemini_error", status=exc.code, error=exc.status)
-        yield _sse("error", {"detail": BUSY if exc.code in (429, 503) else UNAVAILABLE})
+        yield _sse("error", {"detail": gemini_detail(exc)})
     except anthropic.RateLimitError:
         yield _sse("error", {"detail": BUSY})
     except anthropic.APIStatusError as exc:

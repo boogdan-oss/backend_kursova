@@ -115,7 +115,7 @@ async def wait_for_message(queue: asyncio.Queue[str | None]) -> str | None:
 
 async def test_relay_forwards_events_from_redis(monkeypatch: pytest.MonkeyPatch) -> None:
     redis = FakeRedis()
-    monkeypatch.setattr(market_stream, "get_redis", lambda: redis)
+    monkeypatch.setattr(market_stream, "subscriber_redis", lambda: redis)
     hub = MarketHub()
     client = hub.connect()
     client.subscriptions.add(("snapshot", "USDT", "UAH"))
@@ -132,7 +132,9 @@ async def test_relay_forwards_events_from_redis(monkeypatch: pytest.MonkeyPatch)
 async def test_relay_resubscribes_after_redis_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     redis = FakeRedis()
     clients: list[Any] = [BrokenRedis(), redis]
-    monkeypatch.setattr(market_stream, "get_redis", lambda: clients.pop(0) if clients else redis)
+    monkeypatch.setattr(
+        market_stream, "subscriber_redis", lambda: clients.pop(0) if clients else redis
+    )
     monkeypatch.setattr(market_stream, "RECONNECT_PAUSE_SEC", 0)
     hub = MarketHub()
     client = hub.connect()
