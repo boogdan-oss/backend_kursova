@@ -199,6 +199,27 @@ async def test_markets_lists_pairs_with_freshness(
     assert services.find_calls == [(None, "USDT", None)]
 
 
+async def test_pairs_group_exchanges_without_payment_methods(
+    client: AsyncClient, services: FakeServices
+) -> None:
+    services.markets = [
+        replace(MARKET, exchange="okx"),
+        MARKET,
+        replace(MARKET, asset="BTC", buy_fetched_at=None, sell_fetched_at=None),
+    ]
+
+    response = await client.get("/api/v1/markets/pairs")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 2
+    assert body["items"] == [
+        {"asset": "BTC", "fiat": "UAH", "exchanges": ["binance"], "collected": False},
+        {"asset": "USDT", "fiat": "UAH", "exchanges": ["binance", "okx"], "collected": True},
+    ]
+    assert services.find_calls == [(None, None, None)]
+
+
 async def test_snapshot_returns_overall_and_per_payment_prices(
     client: AsyncClient, services: FakeServices
 ) -> None:

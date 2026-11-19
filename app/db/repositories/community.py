@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     Select,
     and_,
+    case,
     cast,
     delete,
     exists,
@@ -43,6 +44,7 @@ from app.db.models import (
     User,
     UserBan,
     UserRole,
+    UserStatus,
 )
 from app.domain.community import (
     AdminUserView,
@@ -56,6 +58,7 @@ from app.domain.community import (
     ProfileView,
     ReportReason,
     ReportView,
+    UserHit,
 )
 from app.domain.roles import cast_role, is_staff
 
@@ -460,6 +463,49 @@ async def comment_view(session: AsyncSession, comment_id: int) -> CommentView | 
 async def user_by_username(session: AsyncSession, username: str) -> User | None:
     query = select(User).where(func.lower(User.username) == username.lower())
     return (await session.execute(query)).scalars().first()
+
+
+def _like_pattern(text: str) -> str:
+    """Екранує % і _ у LIKE: інакше «max_» знаходив би й «maxa»."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+async def search_users(session: AsyncSession, text: str, limit: int) -> list[UserHit]:
+    """Нікнейм або ім'я містить text. Спершу точний нікнейм, далі з нього починається,
+    далі — хто більше пише. Назавжди заблоковані не показуються."""
+    escaped = _like_pattern(text.lower())
+    username = func.lower(User.username)
+    display = func.lower(func.coalesce(User.display_name, ""))
+    posts = (
+        select(func.count())
+        .select_from(Post)
+        .where(Post.author_id == User.id, Post.status == ContentStatus.VISIBLE)
+        .correlate(User)
+        .scalar_subquery()
+    )
+    rank = case(
+        (username == text.lower(), 0),
+        (username.like(f"{escaped}%", escape="\\"), 1),
+        (display.like(f"{escaped}%", escape="\\"), 2),
+        else_=3,
+    )
+    statement = (
+        select(User.username, User.display_name, User.role, posts)
+        .where(
+            User.status != UserStatus.BANNED,
+            or_(
+                username.like(f"%{escaped}%", escape="\\"),
+                display.like(f"%{escaped}%", escape="\\"),
+            ),
+        )
+        .order_by(rank, posts.desc(), User.username)
+        .limit(limit)
+    )
+    rows = (await session.execute(statement)).all()
+    return [
+        UserHit(username=name, display_name=display_name, role=cast_role(role), posts=count)
+        for name, display_name, role, count in rows
+    ]
 
 
 async def profile_view(session: AsyncSession, user: User) -> ProfileView:

@@ -13,6 +13,7 @@ from app.domain.community import (
     ReportReason,
     ReportView,
     TrendingPair,
+    UserHit,
 )
 from app.domain.deal import Deal
 from app.domain.events import (
@@ -69,6 +70,7 @@ __all__ = [
     "SnapshotUpdate",
     "Step",
     "TrendingPair",
+    "UserHit",
     "is_staff",
     "outranks",
 ]

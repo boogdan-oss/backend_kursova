@@ -31,6 +31,7 @@ from app.domain import (
     ReportReason,
     ReportView,
     TrendingPair,
+    UserHit,
     is_staff,
     outranks,
 )
@@ -41,6 +42,7 @@ ProfileTab = Literal["posts", "reposts", "likes"]
 ReportAction = Literal["hide", "delete", "dismiss"]
 
 POPULAR_PERIOD = timedelta(days=7)
+USER_SEARCH_MIN = 2
 
 log = structlog.get_logger()
 
@@ -206,6 +208,14 @@ async def user_feed(
         return FeedPage(await _items(session, rows, viewer), next_cursor)
     scope = TimelineScope(posts=tab == "posts", reposts=tab == "reposts", user_id=user.id)
     return await _timeline_page(session, scope, viewer, cursor, limit)
+
+
+async def search_users(session: AsyncSession, query: str, limit: int) -> list[UserHit]:
+    """Пошук у шапці сайту: нікнейм або ім'я. «@» на початку — звичний префікс нікнейма."""
+    text = query.strip().lstrip("@").strip()
+    if len(text) < USER_SEARCH_MIN:
+        return []
+    return await repo.search_users(session, text, limit)
 
 
 async def profile(session: AsyncSession, viewer: User | None, username: str) -> ProfileView:

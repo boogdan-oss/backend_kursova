@@ -47,6 +47,18 @@ class MarketsResponse(BaseModel):
     items: list[MarketItem]
 
 
+class PairItem(BaseModel):
+    asset: str
+    fiat: str
+    exchanges: list[str]
+    collected: bool
+
+
+class PairsResponse(BaseModel):
+    count: int
+    items: list[PairItem]
+
+
 class SnapshotResponse(BaseModel):
     asset: str
     fiat: str
@@ -112,6 +124,30 @@ async def list_markets(
             for market in markets
         ],
     )
+
+
+@router.get(
+    "/markets/pairs",
+    response_model=PairsResponse,
+    summary="Усі пари з біржами, де вони є",
+    description=(
+        "Легкий довідник для пошуку пари: без способів оплати, тож у десятки разів менший за "
+        "/markets. collected — хоча б одну сторону пари вже збирали на якійсь біржі."
+    ),
+)
+async def list_pairs(session: SessionDep) -> PairsResponse:
+    pairs: dict[tuple[str, str], PairItem] = {}
+    for market in await find_markets(session, None, None, None):
+        item = pairs.setdefault(
+            (market.asset, market.fiat),
+            PairItem(asset=market.asset, fiat=market.fiat, exchanges=[], collected=False),
+        )
+        item.exchanges.append(market.exchange)
+        item.collected = item.collected or bool(market.buy_fetched_at or market.sell_fetched_at)
+    items = [pairs[key] for key in sorted(pairs)]
+    for item in items:
+        item.exchanges.sort()
+    return PairsResponse(count=len(items), items=items)
 
 
 @router.get(

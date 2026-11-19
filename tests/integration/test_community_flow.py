@@ -434,3 +434,31 @@ async def test_bans_block_access_and_expire(
     assert (await client.delete(f"/api/v1/admin/bans/{bob_id}", headers=admin)).status_code == 204
     assert (await login(client, "bob")).status_code == 200
     assert (await client.get("/api/v1/admin/bans", headers=admin)).json()["count"] == 0
+
+
+async def test_user_search_by_nickname_and_name(
+    session_factory: async_sessionmaker[AsyncSession], client: AsyncClient
+) -> None:
+    max_headers = await register(client, "max_p2p")
+    await register(client, "maxim")
+    await register(client, "maxaaa")
+    await register(client, "olena")
+    await register(client, "spammer_max")
+    await sql(
+        session_factory, "UPDATE users SET display_name = 'Макс Трейдер' WHERE username = 'olena'"
+    )
+    await sql(session_factory, "UPDATE users SET status = 'banned' WHERE username = 'spammer_max'")
+    await create_post(client, max_headers, text="USDT/UAH сьогодні")
+
+    async def found(query: str) -> list[str]:
+        response = await client.get(f"{API}/users", params={"query": query})
+        assert response.status_code == 200, response.text
+        return [item["username"] for item in response.json()]
+
+    assert await found("max") == ["max_p2p", "maxaaa", "maxim"]
+    assert await found("@MAXIM") == ["maxim"]
+    assert await found("max_") == ["max_p2p"]
+    assert await found("макс") == ["olena"]
+    assert await found("m") == []
+    first = (await client.get(f"{API}/users", params={"query": "max_p2p"})).json()[0]
+    assert first == {"username": "max_p2p", "display_name": None, "role": "user", "posts": 1}

@@ -17,6 +17,7 @@ from app.domain import (
     ReportReason,
     ReportView,
     TrendingPair,
+    UserHit,
 )
 from app.services import community_service as service
 from app.services.community_service import (
@@ -289,6 +290,23 @@ async def edit_comment(
 async def delete_comment(comment_id: int, session: SessionDep, user: CurrentUser) -> Response:
     await handled(service.delete_comment(session, user, comment_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/users",
+    response_model=list[UserHit],
+    summary="Пошук користувачів за нікнеймом чи іменем",
+    description=(
+        "Для пошуку в шапці сайту. Без email; назавжди заблоковані не показуються. "
+        "Коротше 2 символів (без «@») — порожній список."
+    ),
+)
+async def find_users(
+    session: SessionDep,
+    query: Annotated[str, Query(max_length=50, description="Нікнейм чи ім'я, можна з @")],
+    limit: Annotated[int, Query(ge=1, le=20)] = 8,
+) -> list[UserHit]:
+    return await service.search_users(session, query, limit)
 
 
 @router.get(

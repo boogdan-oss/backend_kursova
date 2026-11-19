@@ -98,6 +98,15 @@ class ProfileView(BaseModel):
     ban_reason: str | None = None
 
 
+class UserHit(BaseModel):
+    """Користувач у результатах пошуку: без email."""
+
+    username: str
+    display_name: str | None = None
+    role: Role = "user"
+    posts: int
+
+
 class ReportView(BaseModel):
     id: int
     target: Literal["post", "comment"]
